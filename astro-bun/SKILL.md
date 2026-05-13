@@ -1,13 +1,13 @@
 ---
-name: astro-bun-stack
-description: Full-stack TypeScript conventions for content-driven sites built on Bun + Astro. Canonical stack — Bun, Astro 6, Content Collections, MDX, React islands, Astro Actions, Drizzle (optional), Better Auth (optional), Tailwind v4, shadcn/ui, Zod, Biome, bun test, Dokploy. Use whenever the user is scaffolding, writing, configuring, or deploying a content-driven site mentioning ANY of these — including "blog", "docs site", "marketing site", "landing page", "portfolio", "content collection", "MDX", "Astro action", "RSS feed", "sitemap", or Astro in a Bun + TS context. Trigger even when only one technology is mentioned. This is the content-site counterpart to `tanstack-bun-stack`, which covers app-driven projects.
+name: astro-bun
+description: Full-stack TypeScript conventions for content-driven sites built on Bun + Astro. Canonical stack — Bun, Astro 6, Content Collections, MDX, React islands, Astro Actions, Drizzle (optional), Better Auth (optional), Tailwind v4, shadcn/ui, Zod, Biome, bun test, Dokploy. Use whenever the user is scaffolding, writing, configuring, or deploying a content-driven site mentioning ANY of these — including "blog", "docs site", "marketing site", "landing page", "portfolio", "content collection", "MDX", "Astro action", "RSS feed", "sitemap", or Astro in a Bun + TS context. Trigger even when only one technology is mentioned. This is the content-site counterpart to `tanstack-bun`, which covers app-driven projects.
 ---
 
 # Astro Bun Stack
 
 Project conventions for content-driven sites (blogs, docs, marketing, portfolios) built on Bun + Astro. Treat this as the source of truth for stack choices, project layout, integration patterns, and deployment. Deviate only with explicit reason.
 
-This is the **content-site** counterpart to `tanstack-bun-stack`. Use this when the project is primarily about pages, articles, and SEO; use `tanstack-bun-stack` when the project is primarily an interactive app behind login.
+This is the **content-site** counterpart to `tanstack-bun`. Use this when the project is primarily about pages, articles, and SEO; use `tanstack-bun` when the project is primarily an interactive app behind login.
 
 ## Stack
 
@@ -367,7 +367,7 @@ For shadcn/ui: install only after `@astrojs/react` is added. Components are impo
 
 ### Drizzle + Postgres (optional)
 
-Same pattern as `tanstack-bun-stack`: `postgres-js` driver, never `pg`.
+Same pattern as `tanstack-bun`: `postgres-js` driver, never `pg`.
 
 ```ts
 // src/lib/db.ts
@@ -507,7 +507,7 @@ For component tests on React islands, use `@testing-library/react` with `happy-d
 
 ## Deployment: Dokploy on VPS
 
-Same shape as `tanstack-bun-stack`: self-hosted, Docker-based, no vendor lock-in. The Astro side needs the `@astrojs/node` adapter in `standalone` mode.
+Same shape as `tanstack-bun`: self-hosted, Docker-based, no vendor lock-in. The Astro side needs the `@astrojs/node` adapter in `standalone` mode.
 
 ### Dockerfile
 

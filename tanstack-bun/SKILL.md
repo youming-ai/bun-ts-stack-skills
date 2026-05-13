@@ -1,5 +1,5 @@
 ---
-name: tanstack-bun-stack
+name: tanstack-bun
 description: Full-stack TypeScript conventions for projects built on the Bun + TanStack Start ecosystem. Covers project scaffolding, directory structure, integration patterns, configuration, and deployment for the canonical stack of Bun runtime, TanStack Start, Vite, Hono, Drizzle ORM, PostgreSQL, Better Auth, Tailwind CSS v4, shadcn/ui, TanStack Form, Zod, Biome, bun test, and Dokploy. Use this skill whenever the user is setting up, configuring, scaffolding, writing code, or deploying a project that mentions ANY of these technologies — including phrases like "set up a new project", "add auth", "Drizzle schema", "mount Hono", "deploy to Dokploy", "my stack", or "this project" in the context of Bun + TanStack work. Trigger this even when only a subset of these technologies is mentioned, since it is the project's canonical stack and other choices should be checked against it.
 ---
 

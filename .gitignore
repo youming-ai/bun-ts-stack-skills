@@ -1,8 +1,0 @@
-.DS_Store
-node_modules/
-.output/
-.vinxi/
-dist/
-*.skill
-.env
-.env.local

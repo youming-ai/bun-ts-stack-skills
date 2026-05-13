@@ -1,60 +1,92 @@
-# tanstack-bun-stack
+# bun-ts-stack-skills
 
-A [Claude skill](https://www.anthropic.com/news/skills) that captures the project conventions for full-stack TypeScript apps built on **Bun + TanStack Start**.
+A pair of [Claude skills](https://www.anthropic.com/news/skills) that capture project conventions for full-stack TypeScript work on the **Bun + TypeScript** ecosystem.
 
-When this skill is installed, Claude will follow these conventions for project scaffolding, integration patterns, configuration, and deployment — without having to be told them every time.
+The two skills are siblings — they share a foundation (Bun runtime, Drizzle, Better Auth, Tailwind v4, Biome, Dokploy) but differ on the top layer depending on whether the project is **app-driven** or **content-driven**.
 
-## The stack
+## The skills
 
-| Layer       | Choice                            |
-| ----------- | --------------------------------- |
-| Runtime     | Bun                               |
-| Language    | TypeScript (strict)               |
-| Framework   | TanStack Start                    |
-| Build       | Vite                              |
-| API         | Hono                              |
-| ORM         | Drizzle + Drizzle Kit             |
-| Database    | PostgreSQL (driver: `postgres`)   |
-| Auth        | Better Auth                       |
-| CSS         | Tailwind v4 (`@tailwindcss/vite`) |
-| UI          | shadcn/ui + lucide-react          |
-| Forms       | TanStack Form                     |
-| Validation  | Zod                               |
-| Lint/Format | Biome                             |
-| Test        | `bun test`                        |
-| Deploy      | Dokploy on VPS (Docker)           |
+| Skill                                                | Use when the project is…                              |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| [`tanstack-bun-stack`](./tanstack-bun-stack/)        | An app — SaaS, dashboard, internal tool, anything behind login with complex state. Top layer: TanStack Start + Hono. |
+| [`astro-bun-stack`](./astro-bun-stack/)              | A content site — blog, docs, marketing, portfolio, landing page. Top layer: Astro + Content Collections. |
+
+Install one, the other, or both. If a single project has both (e.g. an app at `app.example.com` and a marketing site at `example.com`), keep both installed — Claude will pick the right one per task.
+
+## Decision tree
+
+```
+Is the primary deliverable…
+├── articles, docs, marketing pages, with SEO as a hard requirement?
+│      → astro-bun-stack
+└── an authenticated app with persistent state and complex interactions?
+       → tanstack-bun-stack
+```
+
+Edge cases:
+
+- **Documentation for a SaaS product** → `astro-bun-stack` (the docs are content; the product is separate)
+- **Dashboard with public marketing pages** → run two sub-projects, one each
+- **Blog with comments / likes / subscribe** → still `astro-bun-stack`. Astro Actions handle the light dynamic parts; you don't need a full app framework
+
+## Shared foundation
+
+Both skills assume:
+
+| Layer       | Choice                                |
+| ----------- | ------------------------------------- |
+| Runtime     | Bun (also pkg manager, test, scripts) |
+| Language    | TypeScript (strict)                   |
+| ORM         | Drizzle + Drizzle Kit                 |
+| Database    | PostgreSQL (`postgres` driver)        |
+| Auth        | Better Auth                           |
+| CSS         | Tailwind v4 (`@tailwindcss/vite`)     |
+| UI          | shadcn/ui + lucide-react              |
+| Validation  | Zod                                   |
+| Lint/Format | Biome                                 |
+| Test        | `bun test`                            |
+| Deploy      | Dokploy on VPS (Docker)               |
+
+Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, deprecated framework integrations.
+
+When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit. The skills are designed to stay in lockstep.
 
 ## Install
 
-### Option 1 — Use the prebuilt `.skill` file
+### Option 1 — Use the prebuilt `.skill` files
 
-Download `tanstack-bun-stack.skill` from the [latest release](../../releases) and upload it in Claude's skill settings.
+Download from the [latest release](../../releases):
+
+- `tanstack-bun-stack.skill`
+- `astro-bun-stack.skill`
+
+Upload either or both in Claude's skill settings.
 
 ### Option 2 — Build from source
 
 ```bash
-git clone https://github.com/<your-handle>/tanstack-bun-stack.git
-cd tanstack-bun-stack
-zip -r tanstack-bun-stack.skill SKILL.md
+git clone https://github.com/<your-handle>/bun-ts-stack-skills.git
+cd bun-ts-stack-skills
+./build.sh
+# → dist/tanstack-bun-stack.skill
+# → dist/astro-bun-stack.skill
 ```
 
-Then upload the `.skill` file in Claude.
+Then upload the `.skill` files in Claude.
 
-## What's inside `SKILL.md`
+## Editing the skills
 
-- **Stack** with non-negotiables (what to use, what not to install)
-- **Architecture** diagram of how the pieces fit
-- **Project structure** with the canonical `src/` layout
-- **Setup commands** for scaffolding a new project end to end
-- **Integration patterns** with copy-pasteable snippets for:
-  - Mounting Hono inside TanStack Start
-  - Drizzle with `postgres.js`
-  - Better Auth + Drizzle + Hono
-  - TanStack Form + Zod (shared schema)
-- **Configuration** files for Tailwind v4, Biome, TypeScript
-- **Testing** with `bun test`
-- **Deployment** to Dokploy on a VPS, with a working Dockerfile
-- **Gotchas** — the foot-guns that took real time to find
+Each skill is a single `SKILL.md` under its own folder. To edit:
+
+1. Modify the relevant `SKILL.md`
+2. Run `./build.sh` to rebuild the `.skill` packages
+3. Re-upload to Claude
+
+The skill-creator validation rules (see [Anthropic's skill docs](https://docs.claude.com/en/docs/claude-code/skills)) require:
+
+- YAML frontmatter with `name` and `description`
+- `description` ≤ 1024 characters
+- Reasonable SKILL.md body (< 500 lines is ideal, both skills are within this)
 
 ## License
 

@@ -1,17 +1,15 @@
 # bun-ts-stack-skills
 
-A pair of [Claude skills](https://www.anthropic.com/news/skills) that capture project conventions for full-stack TypeScript work on the **Bun + TypeScript** ecosystem.
-
-The two skills are siblings — they share a foundation (Bun runtime, Drizzle, Better Auth, Tailwind v4, Biome, Dokploy) but differ on the top layer depending on whether the project is **app-driven** or **content-driven**.
+A pair of [Claude skills](https://www.anthropic.com/news/skills) for full-stack TypeScript work on the **Bun** ecosystem. The two are siblings — same foundation, different top layer depending on whether the project is **app-driven** or **content-driven**.
 
 ## The skills
 
-| Skill                                                | Use when the project is…                              |
-| ---------------------------------------------------- | ----------------------------------------------------- |
-| [`tanstack`](./tanstack/)        | An app — SaaS, dashboard, internal tool, anything behind login with complex state. Top layer: TanStack Start + Hono. |
-| [`astro`](./astro/)              | A content site — blog, docs, marketing, portfolio, landing page. Top layer: Astro + Content Collections. |
+| Skill                       | Use when the project is…                                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [`tanstack`](./tanstack/)   | An app — SaaS, dashboard, internal tool, anything behind login with complex state. Top: TanStack Start + Hono.        |
+| [`astro`](./astro/)         | A content site — blog, docs, marketing, portfolio, landing page. Top: Astro + Content Collections.                    |
 
-Install one, the other, or both. If a single project has both (e.g. an app at `app.example.com` and a marketing site at `example.com`), keep both installed — Claude will pick the right one per task.
+Install one, the other, or both. If a single project has both (e.g. an app at `app.example.com` and a marketing site at `example.com`), keep both — Claude picks the right one per task.
 
 ## Decision tree
 
@@ -25,9 +23,9 @@ Is the primary deliverable…
 
 Edge cases:
 
-- **Documentation for a SaaS product** → `astro` (the docs are content; the product is separate)
-- **Dashboard with public marketing pages** → run two sub-projects, one each
-- **Blog with comments / likes / subscribe** → still `astro`. Astro Actions handle the light dynamic parts; you don't need a full app framework
+- **SaaS product docs** → `astro` (docs are content; the product is separate)
+- **Dashboard + public marketing pages** → two sub-projects, one each
+- **Blog with comments / likes / subscribe** → still `astro` — Astro Actions handle the light dynamic parts
 
 ## Shared foundation
 
@@ -54,44 +52,23 @@ Both skills assume:
 
 Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`/`pre-commit`, `winston`/`bunyan`, deprecated framework integrations.
 
-When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit. The skills are designed to stay in lockstep.
+When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit — they stay in lockstep.
 
 ## Install
 
-### Option 1 — Use the prebuilt `.skill` files
+**Prebuilt** — download `tanstack.skill` / `astro.skill` from the [latest release](../../releases) and upload in Claude's skill settings.
 
-Download from the [latest release](../../releases):
-
-- `tanstack.skill`
-- `astro.skill`
-
-Upload either or both in Claude's skill settings.
-
-### Option 2 — Build from source
+**From source**:
 
 ```bash
 git clone https://github.com/<your-handle>/bun-ts-stack-skills.git
-cd bun-ts-stack-skills
-./build.sh
-# → dist/tanstack.skill
-# → dist/astro.skill
+cd bun-ts-stack-skills && ./build.sh
+# → dist/tanstack.skill, dist/astro.skill
 ```
 
-Then upload the `.skill` files in Claude.
+## Editing
 
-## Editing the skills
-
-Each skill is a single `SKILL.md` under its own folder. To edit:
-
-1. Modify the relevant `SKILL.md`
-2. Run `./build.sh` to rebuild the `.skill` packages
-3. Re-upload to Claude
-
-The skill-creator validation rules (see [Anthropic's skill docs](https://docs.claude.com/en/docs/claude-code/skills)) require:
-
-- YAML frontmatter with `name` and `description`
-- `description` ≤ 1024 characters
-- Reasonable SKILL.md body (< 500 lines is ideal, both skills are within this)
+Each skill is a single `SKILL.md` under its folder. Edit → `./build.sh` → re-upload. Validation rules (see [Anthropic's skill docs](https://docs.claude.com/en/docs/claude-code/skills)): YAML frontmatter with `name` + `description`, description ≤ 1024 chars.
 
 ## License
 

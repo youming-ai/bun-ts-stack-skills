@@ -1,6 +1,6 @@
 ---
 name: tanstack
-description: Full-stack TypeScript conventions for projects built on the Bun + TanStack Start ecosystem. Covers project scaffolding, directory structure, integration patterns, configuration, and deployment for the canonical stack of Bun runtime, TanStack Start, Vite, Hono, Drizzle ORM, PostgreSQL, Better Auth, Tailwind CSS v4, shadcn/ui, TanStack Form, Zod, Biome, bun test, and Dokploy. Use this skill whenever the user is setting up, configuring, scaffolding, writing code, or deploying a project that mentions ANY of these technologies — including phrases like "set up a new project", "add auth", "Drizzle schema", "mount Hono", "deploy to Dokploy", "my stack", or "this project" in the context of Bun + TanStack work. Trigger this even when only a subset of these technologies is mentioned, since it is the project's canonical stack and other choices should be checked against it.
+description: Full-stack TypeScript conventions for projects built on the Bun + TanStack Start ecosystem. Covers project scaffolding, directory structure, integration patterns, configuration, and deployment for the canonical stack of Bun runtime, TanStack Start, Vite, Hono, Drizzle ORM, PostgreSQL, Better Auth, Tailwind CSS v4, shadcn/ui, TanStack Form, Zod, Resend, pino, Sentry, lefthook, GitHub Actions, Biome, bun test, and Dokploy. Use this skill whenever the user is setting up, configuring, scaffolding, writing code, or deploying a project that mentions ANY of these technologies — including phrases like "set up a new project", "add auth", "send emails", "add logging", "rate limit", "CI pipeline", "Drizzle schema", "mount Hono", "deploy to Dokploy", "my stack", or "this project" in the context of Bun + TanStack work. Trigger this even when only a subset of these technologies is mentioned, since it is the project's canonical stack and other choices should be checked against it.
 ---
 
 # TanStack Bun Stack
@@ -23,8 +23,14 @@ Project conventions for full-stack TypeScript apps built on Bun + TanStack Start
 | UI          | shadcn/ui + lucide-react              |
 | Forms       | TanStack Form                         |
 | Validation  | Zod                                   |
+| Email       | Resend + React Email                  |
+| Logging     | pino + `hono-pino`                    |
+| Monitoring  | Sentry                                |
+| Security    | `hono/cors`, `hono/secure-headers`, `hono-rate-limiter` |
 | Lint/Format | Biome                                 |
+| Git hooks   | lefthook                              |
 | Test        | `bun test`                            |
+| CI          | GitHub Actions                        |
 | Deploy      | Dokploy on VPS (Docker)               |
 
 ### Non-negotiables
@@ -33,7 +39,7 @@ Project conventions for full-stack TypeScript apps built on Bun + TanStack Start
 - All code is TypeScript with `strict: true`.
 - No Node-only dependencies. If a library doesn't work in Bun, find an alternative.
 - Prefer Bun built-ins over third-party packages: `Bun.password`, `bun:sqlite`, `Bun.s3`, `Bun.file`, native `fetch`, `bun:test`, `bun --watch`.
-- Do **not** install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `vitest`, `bcrypt`, `argon2`, `pg`, `better-sqlite3`, `node-fetch`, `eslint`, `prettier`.
+- Do **not** install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `vitest`, `bcrypt`, `argon2`, `pg`, `better-sqlite3`, `node-fetch`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`.
 
 ## Architecture
 
@@ -75,7 +81,11 @@ src/
 │   └── auth-schema.ts            # Better Auth tables (CLI-generated, do not edit)
 ├── lib/
 │   ├── auth.ts                   # Better Auth server config
-│   └── auth-client.ts            # createAuthClient + hooks
+│   ├── auth-client.ts            # createAuthClient + hooks
+│   ├── email.ts                  # Resend wrapper
+│   ├── logger.ts                 # pino instance
+│   └── sentry.ts                 # Sentry init (imported first thing)
+├── emails/                       # React Email templates
 ├── schemas/                      # shared Zod schemas
 ├── components/
 │   ├── ui/                       # shadcn/ui (generated)
@@ -84,8 +94,10 @@ src/
 │   └── app.css                   # Tailwind v4 entry (@import "tailwindcss")
 └── router.tsx
 drizzle/                          # generated migrations
+.github/workflows/ci.yml
 biome.json
 drizzle.config.ts
+lefthook.yml
 vite.config.ts
 Dockerfile
 ```
@@ -103,22 +115,29 @@ cd my-app
 bun add hono drizzle-orm postgres better-auth zod
 bun add @tanstack/react-form
 
-# 3. Dev deps
-bun add -d drizzle-kit @biomejs/biome
+# 3. Email, logging, monitoring, security
+bun add resend react-email @react-email/components
+bun add pino hono-pino
+bun add @sentry/bun @sentry/tanstackstart-react
+bun add hono-rate-limiter
 
-# 4. Tailwind v4
+# 4. Dev deps
+bun add -d drizzle-kit @biomejs/biome lefthook
+
+# 5. Tailwind v4
 bun add tailwindcss @tailwindcss/vite
 
-# 5. shadcn/ui (interactive)
+# 6. shadcn/ui (interactive)
 bunx shadcn@latest init
 
-# 6. Biome
+# 7. Biome + lefthook
 bunx biome init
+bunx lefthook install
 
-# 7. After writing src/lib/auth.ts, generate Better Auth schema
+# 8. After writing src/lib/auth.ts, generate Better Auth schema
 bunx @better-auth/cli generate --output src/db/auth-schema.ts
 
-# 8. Generate and apply initial DB migration
+# 9. Generate and apply initial DB migration
 bunx drizzle-kit generate
 bunx drizzle-kit migrate
 ```
@@ -212,10 +231,23 @@ bunx drizzle-kit studio      # GUI
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from '~/db'
+import { sendEmail } from '~/lib/email'
+import { ResetPasswordEmail, VerifyEmail } from '~/emails'
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg' }),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendEmail({ to: user.email, subject: 'Reset your password', react: ResetPasswordEmail({ url }) })
+    },
+  },
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({ to: user.email, subject: 'Verify your email', react: VerifyEmail({ url }) })
+    },
+  },
   // socialProviders: { github: { clientId, clientSecret } },
 })
 ```
@@ -237,6 +269,131 @@ if (!session) throw new Error('unauthorized')
 ```
 
 After every `better-auth` upgrade, re-run `bunx @better-auth/cli generate` and a new Drizzle migration.
+
+### Email (Resend + React Email)
+
+Resend is the only mail provider. Templates are React components in `src/emails/`.
+
+```ts
+// src/lib/email.ts
+import { Resend } from 'resend'
+import type { ReactElement } from 'react'
+
+const resend = new Resend(process.env.RESEND_API_KEY!)
+
+export async function sendEmail(opts: { to: string; subject: string; react: ReactElement }) {
+  const { error } = await resend.emails.send({
+    from: process.env.EMAIL_FROM!,
+    ...opts,
+  })
+  if (error) throw new Error(`email send failed: ${error.message}`)
+}
+```
+
+```tsx
+// src/emails/VerifyEmail.tsx
+import { Button, Html, Text } from '@react-email/components'
+
+export function VerifyEmail({ url }: { url: string }) {
+  return (
+    <Html>
+      <Text>Confirm your email to finish signing up.</Text>
+      <Button href={url}>Verify email</Button>
+    </Html>
+  )
+}
+```
+
+Required env: `RESEND_API_KEY`, `EMAIL_FROM` (a verified sender on your Resend domain).
+
+### Logging (pino)
+
+One pino instance, JSON in prod, pretty in dev. Always include a `requestId`.
+
+```ts
+// src/lib/logger.ts
+import pino from 'pino'
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL ?? 'info',
+  transport: process.env.NODE_ENV === 'development' ? { target: 'pino-pretty' } : undefined,
+})
+```
+
+Plug into Hono so every request gets a child logger on `c.var.logger`:
+
+```ts
+import { pinoLogger } from 'hono-pino'
+import { logger } from '~/lib/logger'
+
+app.use('*', pinoLogger({ pino: logger }))
+```
+
+In handlers: `c.var.logger.info({ userId }, 'posted')`. Never `console.log` in committed code.
+
+### Error monitoring (Sentry)
+
+Initialise Sentry **first**, before any other imports that may throw.
+
+```ts
+// src/lib/sentry.ts
+import * as Sentry from '@sentry/bun'
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 0.1,
+})
+```
+
+Import it at the top of the server entry (`src/router.tsx` and the Hono `src/server/hono.ts`):
+
+```ts
+import '~/lib/sentry'
+```
+
+Wire Hono's error handler:
+
+```ts
+import * as Sentry from '@sentry/bun'
+
+app.onError((err, c) => {
+  Sentry.captureException(err)
+  c.var.logger?.error({ err }, 'unhandled')
+  return c.json({ error: 'internal' }, 500)
+})
+```
+
+For the React side, follow `@sentry/tanstackstart-react`'s router instrumentation.
+
+### Security middleware
+
+CORS, security headers, and a rate limit on auth endpoints are non-negotiable.
+
+```ts
+// src/server/hono.ts
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { secureHeaders } from 'hono/secure-headers'
+import { rateLimiter } from 'hono-rate-limiter'
+import { auth } from '~/lib/auth'
+
+export const app = new Hono({ strict: false }).basePath('/api')
+
+app.use('*', secureHeaders())
+app.use('*', cors({ origin: process.env.PUBLIC_ORIGIN!, credentials: true }))
+
+const authLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (c) => c.req.header('x-forwarded-for') ?? c.req.header('cf-connecting-ip') ?? 'anon',
+})
+app.use('/auth/*', authLimiter)
+
+app.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw))
+```
+
+Behind Dokploy's Traefik, the client IP is in `x-forwarded-for`. Don't rate-limit by `c.req.remote` — every request looks like the proxy.
 
 ### TanStack Form + Zod
 
@@ -342,6 +499,52 @@ bunx biome ci                # CI mode, no writes
 - `"verbatimModuleSyntax": true`
 - Path alias `"~/*": ["./src/*"]`
 
+### lefthook (pre-commit)
+
+One canonical pre-commit hook: Biome on staged files. No husky, no pre-commit-the-tool.
+
+`lefthook.yml`:
+
+```yaml
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: '*.{ts,tsx,js,jsx,json,jsonc}'
+      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+```
+
+Install once per clone: `bunx lefthook install`.
+
+### GitHub Actions CI
+
+One workflow file, runs on every PR and push to main. Mirrors the same checks lefthook runs locally, plus typecheck and tests.
+
+`.github/workflows/ci.yml`:
+
+```yaml
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx biome ci
+      - run: bunx tsc --noEmit
+      - run: bun test
+```
+
+Add a `services: postgres:` block if your tests touch the database — never run unit tests against a shared dev DB.
+
 ## Testing
 
 Use Bun's built-in test runner. No Jest, no Vitest.
@@ -407,6 +610,11 @@ CMD ["bun", "run", "./.output/server/index.mjs"]
    - `DATABASE_URL` — use the **internal service hostname**, not `localhost`
    - `BETTER_AUTH_SECRET` — generate with `openssl rand -base64 32`
    - `BETTER_AUTH_URL` — the public origin (e.g. `https://app.example.com`)
+   - `PUBLIC_ORIGIN` — same value, used by the CORS middleware
+   - `RESEND_API_KEY` — from Resend dashboard
+   - `EMAIL_FROM` — verified sender, e.g. `auth@example.com`
+   - `SENTRY_DSN` — from the Sentry project
+   - `LOG_LEVEL` — `info` in prod, `debug` for incident response
 6. Enable HTTPS via the built-in Traefik + Let's Encrypt. Add the domain in the Domains tab.
 7. Enable auto-deploy on Git push (webhook).
 
@@ -428,3 +636,8 @@ Add a release step that runs `bunx drizzle-kit migrate` before the new container
 - **Dokploy + Postgres on the same VPS**: use the internal service hostname (e.g. `my-app-db`), not `localhost`, in `DATABASE_URL`.
 - **Server functions vs Hono**: pick one per route. Mixed ownership of the same path causes hard-to-debug 404s.
 - **Edge runtimes**: this stack targets Node-compatible runtime (Bun server). It is not designed for Cloudflare Workers; some Better Auth and `postgres` features assume long-lived connections.
+- **Sentry must init first**: `import '~/lib/sentry'` has to be the *first* import in the server entry. Otherwise instrumented modules load before Sentry hooks them and you lose half your traces.
+- **Resend sender domain**: `EMAIL_FROM` must be on a domain verified in Resend, not just any address. Better Auth's verify/reset flows fail silently otherwise — only the Resend dashboard shows the rejection.
+- **Rate-limit key behind a proxy**: behind Dokploy's Traefik, key by `x-forwarded-for`, not `c.req.remote` (always the proxy). Same applies to any reverse proxy.
+- **`console.log` in committed code**: forbidden. Use `c.var.logger` (Hono) or the imported `logger` (server functions). Otherwise lines bypass pino's JSON formatting and the structured-log pipeline.
+- **`.env` in Docker**: do not bake env into the image. Set them in Dokploy's UI so secrets stay out of the image layer.

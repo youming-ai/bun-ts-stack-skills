@@ -43,11 +43,16 @@ Both skills assume:
 | CSS         | Tailwind v4 (`@tailwindcss/vite`)     |
 | UI          | shadcn/ui + lucide-react              |
 | Validation  | Zod                                   |
+| Email       | Resend + React Email                  |
+| Logging     | pino                                  |
+| Monitoring  | Sentry                                |
 | Lint/Format | Biome                                 |
+| Git hooks   | lefthook                              |
 | Test        | `bun test`                            |
+| CI          | GitHub Actions                        |
 | Deploy      | Dokploy on VPS (Docker)               |
 
-Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, deprecated framework integrations.
+Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`/`pre-commit`, `winston`/`bunyan`, deprecated framework integrations.
 
 When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit. The skills are designed to stay in lockstep.
 

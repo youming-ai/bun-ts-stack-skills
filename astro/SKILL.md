@@ -5,9 +5,7 @@ description: Full-stack TypeScript conventions for content-driven sites built on
 
 # Astro Bun Stack
 
-Project conventions for content-driven sites (blogs, docs, marketing, portfolios) built on Bun + Astro. Treat this as the source of truth for stack choices, project layout, integration patterns, and deployment. Deviate only with explicit reason.
-
-This is the content-site counterpart to `tanstack`. Use this when the project is primarily about pages, articles, and SEO; use `tanstack` when the project is primarily an interactive app behind login.
+Conventions for content-driven sites (blogs, docs, marketing, portfolios) on Bun + Astro. Counterpart to `tanstack` — pick this when SEO and pages matter; pick `tanstack` when state and login matter.
 
 ## Stack
 
@@ -17,11 +15,11 @@ This is the content-site counterpart to `tanstack`. Use this when the project is
 | Language    | TypeScript (strict)                                           |
 | Framework   | Astro 5 (LTS)                                                 |
 | Content     | Content Collections (`glob()` loader) + MDX                   |
-| Server      | Astro Actions (typed server functions, Zod-validated)         |
-| Interactive | React islands (`@astrojs/react`) — only where needed          |
-| ORM         | Drizzle + Drizzle Kit (optional, only if DB is needed)        |
+| Server      | Astro Actions (typed, Zod-validated)                          |
+| Interactive | React islands (`@astrojs/react`) — only when needed           |
+| ORM         | Drizzle + Drizzle Kit (optional)                              |
 | Database    | PostgreSQL via `postgres` (optional)                          |
-| Auth        | Better Auth (optional, only if auth is needed)                |
+| Auth        | Better Auth (optional)                                        |
 | CSS         | Tailwind v4 (`@tailwindcss/vite`)                             |
 | UI          | shadcn/ui (React islands) + lucide-react                      |
 | Validation  | Zod                                                           |
@@ -30,7 +28,7 @@ This is the content-site counterpart to `tanstack`. Use this when the project is
 | Email       | Resend + React Email (only if site sends mail)                |
 | Logging     | pino (in `src/middleware.ts`)                                 |
 | Monitoring  | Sentry (`@sentry/astro`)                                      |
-| Security    | Astro middleware: security headers + rate limit on Actions/auth |
+| Security    | Astro middleware: security headers + rate limit               |
 | Lint/Format | Biome                                                         |
 | Git hooks   | lefthook                                                      |
 | Test        | `bun test`                                                    |
@@ -39,24 +37,20 @@ This is the content-site counterpart to `tanstack`. Use this when the project is
 
 ### Non-negotiables
 
-- Bun is the runtime, package manager, test runner, and script runner. Never reach for `npm` / `pnpm` / `yarn` / `node`.
-- All code is TypeScript with `strict: true`.
-- **Zero JS by default**: Astro renders static HTML; interactive bits are explicit islands with `client:*` directives. If a feature can be done with an `.astro` component, do not reach for React.
-- No Node-only dependencies that break in Bun.
-- Prefer Bun built-ins: `Bun.password`, `Bun.file`, native `fetch`, `bun:test`, `bun --watch`.
-- Do **not** install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `vitest`, `bcrypt`, `argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`, the deprecated `@astrojs/tailwind` integration.
+- Bun is runtime, package manager, test runner, script runner. Never `npm` / `pnpm` / `yarn` / `node`.
+- TypeScript `strict: true`.
+- **Zero JS by default**: Astro renders static HTML; interactive bits are explicit islands with `client:*`. If `.astro` can do it, don't reach for React.
+- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `vitest`, `bcrypt`, `argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`, `@astrojs/tailwind` (deprecated).
 
 ### When to add what
 
-This stack scales from a pure static blog to a content site with light dynamic features. Add layers only as you need them:
-
 | Need                                      | Add                                            |
 | ----------------------------------------- | ---------------------------------------------- |
-| Pure static blog / docs / marketing       | nothing extra — stop at the core               |
+| Pure static blog / docs / marketing       | nothing extra                                  |
 | Comments, likes, newsletter signup        | `@astrojs/react` + Astro Actions               |
 | Persisted data                            | Drizzle + Postgres                             |
 | Login                                     | Better Auth                                    |
-| Site search                               | Pagefind (post-build step)                     |
+| Site search                               | Pagefind                                       |
 
 ## Architecture
 
@@ -64,7 +58,7 @@ This stack scales from a pure static blog to a content site with light dynamic f
                        Build time                       Runtime
                        ──────────                       ───────
 
-  src/content/  ───►  Content Collections  ───►  static HTML pages
+  src/content/  ───►  Content Collections  ───►  static HTML
   (.md, .mdx)         (Zod-validated)            (prerendered)
                                                           │
   src/pages/    ───►  .astro pages         ─────────────► │
@@ -78,109 +72,76 @@ This stack scales from a pure static blog to a content site with light dynamic f
                     Better Auth (optional)
 ```
 
-Key idea: most pages are **prerendered** to static HTML at build time. Only routes that opt into `export const prerender = false` (or all of them, if you set `output: 'server'`) run on the server. Actions are always server-side, regardless of page mode.
+Most pages **prerender** to static HTML. Routes with `export const prerender = false` (or `output: 'server'`) run on the server. Actions always run server-side.
 
 ## Project structure
 
 ```
 src/
-├── pages/                        # File-based routing
+├── pages/
 │   ├── index.astro
-│   ├── blog/
-│   │   ├── index.astro           # listing
-│   │   └── [...slug].astro       # post page
-│   ├── rss.xml.ts                # RSS feed
+│   ├── blog/{index,[...slug]}.astro
+│   ├── rss.xml.ts
 │   └── 404.astro
-├── content/                      # Content Collections sources
-│   ├── blog/
-│   │   ├── hello-world.md
-│   │   └── another-post.mdx
-│   └── docs/
-├── content.config.ts             # Collections + Zod schemas (Astro 5+ location)
-├── actions/
-│   └── index.ts                  # Astro Actions, exported under `server`
-├── middleware.ts                 # security headers + pino logging + rate limit
-├── layouts/
-│   ├── BaseLayout.astro
-│   └── PostLayout.astro
+├── content/{blog,docs}/         # Content Collections sources
+├── content.config.ts            # collections + Zod schemas (Astro 5+)
+├── actions/index.ts             # Astro Actions
+├── middleware.ts                # security headers + pino + rate limit
+├── layouts/                     # BaseLayout, PostLayout, ...
 ├── components/
-│   ├── *.astro                   # default — no JS
-│   ├── ui/                       # shadcn/ui (React, used as islands)
-│   └── react/                    # custom React islands
+│   ├── *.astro                  # default — no JS
+│   ├── ui/                      # shadcn/ui (React islands)
+│   └── react/                   # custom React islands
 ├── lib/
-│   ├── db.ts                     # Drizzle client (if DB used)
-│   ├── auth.ts                   # Better Auth config (if auth used)
-│   ├── email.ts                  # Resend wrapper (if mail used)
-│   └── logger.ts                 # pino instance
-├── emails/                       # React Email templates (if mail used)
-├── db/
-│   └── schema.ts                 # Drizzle schema (if DB used)
-├── schemas/                      # shared Zod schemas
-└── styles/
-    └── global.css                # Tailwind v4 entry: @import "tailwindcss"
-public/
-├── favicon.svg
-├── robots.txt
-└── og/                           # OG images
+│   ├── db.ts                    # Drizzle (if DB)
+│   ├── auth.ts                  # Better Auth (if auth)
+│   ├── email.ts                 # Resend (if mail)
+│   └── logger.ts                # pino
+├── emails/                      # React Email templates
+├── db/schema.ts                 # Drizzle schema (if DB)
+├── schemas/
+└── styles/global.css            # @import "tailwindcss"
+public/{favicon.svg,robots.txt,og/}
 .github/workflows/ci.yml
-astro.config.mjs
-biome.json
-lefthook.yml
-Dockerfile
+astro.config.mjs, biome.json, lefthook.yml, Dockerfile
 ```
 
-## Setup commands
+## Setup
 
 ```bash
-# 1. Scaffold
-bun create astro@latest my-site
-cd my-site
+bun create astro@latest my-site && cd my-site
 
-# 2. Tailwind v4 (Astro 5 wires the Vite plugin automatically)
+# Core
 bunx astro add tailwind
+bunx astro add mdx sitemap
+bun add @astrojs/rss zod
 
-# 3. MDX + Sitemap + RSS
-bunx astro add mdx
-bunx astro add sitemap
-bun add @astrojs/rss
-
-# 4. React (only if interactive islands are needed)
+# Interactivity (only when needed)
 bunx astro add react
-
-# 5. Node adapter (for server features and Dokploy deploy)
-bunx astro add node
-
-# 6. shadcn/ui (only after React is added)
 bunx shadcn@latest init
 
-# 7. Biome + lefthook
+# Server (Actions, SSR, deploy)
+bunx astro add node
+
+# Quality
 bun add -d @biomejs/biome lefthook
-bunx biome init
-bunx lefthook install
+bunx biome init && bunx lefthook install
 
-# 8. Validation
-bun add zod
-
-# 9. Logging + monitoring (always)
+# Logging + monitoring
 bun add pino
 bunx astro add @sentry/astro
 
-# 10. Email (only if site sends mail — newsletter, contact form, auth)
-bun add resend react-email @react-email/components
-
-# 11. Optional: DB + Auth
-bun add drizzle-orm postgres better-auth
-bun add -d drizzle-kit
-
-# 12. Pagefind (optional, post-build search)
-bun add -d pagefind
+# Optional
+bun add resend react-email @react-email/components                       # email
+bun add drizzle-orm postgres better-auth && bun add -d drizzle-kit       # DB + auth
+bun add -d pagefind                                                      # search
 ```
 
 ## Integration patterns
 
 ### Content Collections
 
-Define one schema per collection in `src/content.config.ts`. The schema is the source of truth for frontmatter — Astro validates at build time and generates types.
+Schema is the source of truth for frontmatter — Astro validates at build time and generates types.
 
 ```ts
 // src/content.config.ts
@@ -204,37 +165,25 @@ const blog = defineCollection({
 export const collections = { blog }
 ```
 
-Query content in pages:
+Listing:
 
 ```astro
 ---
 // src/pages/blog/index.astro
 import { getCollection } from 'astro:content'
-import BaseLayout from '~/layouts/BaseLayout.astro'
-
 const posts = (await getCollection('blog', ({ data }) => !data.draft))
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
 ---
-<BaseLayout title="Blog">
-  <ul>
-    {posts.map((p) => (
-      <li>
-        <a href={`/blog/${p.id}`}>{p.data.title}</a>
-        <time datetime={p.data.pubDate.toISOString()}>
-          {p.data.pubDate.toLocaleDateString()}
-        </time>
-      </li>
-    ))}
-  </ul>
-</BaseLayout>
+<ul>
+  {posts.map((p) => <li><a href={`/blog/${p.id}`}>{p.data.title}</a></li>)}
+</ul>
 ```
 
-Render a single post with `[...slug].astro`:
+Single post via `[...slug].astro`:
 
 ```astro
 ---
 import { getCollection, render } from 'astro:content'
-import PostLayout from '~/layouts/PostLayout.astro'
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog', ({ data }) => !data.draft)
@@ -244,14 +193,12 @@ export async function getStaticPaths() {
 const { post } = Astro.props
 const { Content } = await render(post)
 ---
-<PostLayout frontmatter={post.data}>
-  <Content />
-</PostLayout>
+<Content />
 ```
 
-### Astro Actions (typed server functions)
+### Astro Actions
 
-Use Actions instead of API routes whenever possible. They give you Zod validation, type-safe RPC, and progressive enhancement for HTML forms — all for free.
+Prefer Actions over API routes — Zod validation, typed RPC, progressive HTML forms, all free.
 
 ```ts
 // src/actions/index.ts
@@ -261,50 +208,33 @@ import { z } from 'astro:schema'
 export const server = {
   subscribe: defineAction({
     accept: 'form',
-    input: z.object({
-      email: z.string().email(),
-    }),
-    handler: async ({ email }) => {
-      // call email service, write to DB, etc.
-      return { ok: true as const }
-    },
+    input: z.object({ email: z.string().email() }),
+    handler: async ({ email }) => ({ ok: true as const }),
   }),
-
   like: defineAction({
     input: z.object({ postId: z.string() }),
     handler: async ({ postId }, ctx) => {
-      // ctx is Astro's request context
-      if (!ctx.locals.user) {
-        throw new ActionError({ code: 'UNAUTHORIZED' })
-      }
-      // increment likes...
+      if (!ctx.locals.user) throw new ActionError({ code: 'UNAUTHORIZED' })
       return { likes: 42 }
     },
   }),
 }
 ```
 
-Call from a React island:
+From a React island:
 
 ```tsx
 import { actions } from 'astro:actions'
 
 export function LikeButton({ postId }: { postId: string }) {
-  return (
-    <button
-      onClick={async () => {
-        const { data, error } = await actions.like({ postId })
-        if (error) console.error(error.code)
-        else console.log(data.likes)
-      }}
-    >
-      Like
-    </button>
-  )
+  return <button onClick={async () => {
+    const { data, error } = await actions.like({ postId })
+    if (!error) console.log(data.likes)
+  }}>Like</button>
 }
 ```
 
-Call from an HTML form (works without JS):
+From an HTML form (works without JS):
 
 ```astro
 ---
@@ -320,8 +250,6 @@ const result = Astro.getActionResult(actions.subscribe)
 
 ### React islands
 
-React components are imported into `.astro` files and given a hydration directive:
-
 ```astro
 ---
 import { LikeButton } from '~/components/react/LikeButton'
@@ -329,22 +257,19 @@ import { LikeButton } from '~/components/react/LikeButton'
 <LikeButton postId={post.id} client:idle />
 ```
 
-Directive matrix:
+| Directive        | When                                          |
+| ---------------- | --------------------------------------------- |
+| `client:load`    | Critical, above-the-fold                      |
+| `client:idle`    | Default — hydrates after page load            |
+| `client:visible` | Below the fold                                |
+| `client:only`    | Browser-only deps (can't SSR)                 |
 
-| Directive        | When to use                                           |
-| ---------------- | ----------------------------------------------------- |
-| `client:load`    | Critical interactivity above the fold                 |
-| `client:idle`    | Default for most islands; hydrates after page load    |
-| `client:visible` | Below-the-fold widgets                                |
-| `client:only`    | Components that cannot SSR (browser-only deps)        |
-
-Use `.astro` components by default; reach for React only when needed.
+`.astro` by default; React only when interactive.
 
 ### Tailwind v4 + shadcn/ui
 
-`astro.config.mjs`:
-
 ```ts
+// astro.config.mjs
 import { defineConfig } from 'astro/config'
 import tailwindcss from '@tailwindcss/vite'
 import mdx from '@astrojs/mdx'
@@ -360,34 +285,21 @@ export default defineConfig({
 })
 ```
 
-`src/styles/global.css`:
-
 ```css
+/* src/styles/global.css */
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
 @theme {
   --color-brand: oklch(0.7 0.18 250);
-  --font-display: "Inter", sans-serif;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
 ```
 
-There is **no `tailwind.config.js`** in v4. Tokens live in `@theme`. Imported once from a layout:
-
-```astro
----
-// src/layouts/BaseLayout.astro
-import '~/styles/global.css'
----
-```
-
-For shadcn/ui: install only after `@astrojs/react` is added. Components are imported into `.astro` files and given a `client:*` directive at the usage site.
+Import once from a layout: `import '~/styles/global.css'`. No `tailwind.config.js` — tokens in `@theme`. shadcn/ui only after `@astrojs/react`.
 
 ### Drizzle + Postgres (optional)
-
-Same pattern as `tanstack`: `postgres-js` driver, never `pg`.
 
 ```ts
 // src/lib/db.ts
@@ -399,11 +311,9 @@ const client = postgres(import.meta.env.DATABASE_URL, { prepare: false })
 export const db = drizzle(client, { schema })
 ```
 
-Use `import.meta.env.*` in Astro, not `process.env.*` directly.
+Always `import.meta.env.*`, never `process.env.*` in Astro code.
 
 ### Better Auth (optional)
-
-If the site needs login, wire Better Auth into a catch-all API route:
 
 ```ts
 // src/pages/api/auth/[...all].ts
@@ -414,13 +324,11 @@ export const prerender = false
 export const ALL: APIRoute = ({ request }) => auth.handler(request)
 ```
 
-Read session in Actions or pages via `auth.api.getSession({ headers: Astro.request.headers })`. Re-run `bunx @better-auth/cli generate` after every upgrade.
-
-Wire `sendResetPassword` and `sendVerificationEmail` to the Resend wrapper (see *Email* below); Better Auth's flows fail silently without them.
+Session: `await auth.api.getSession({ headers: Astro.request.headers })`. Wire `sendResetPassword` and `sendVerificationEmail` to Resend (below) — flows fail silently otherwise. Re-run the CLI after every upgrade.
 
 ### Email (Resend + React Email)
 
-Only add when the site sends mail — newsletter signup, contact form, or Better Auth. Resend is the only mail provider; templates are React components in `src/emails/`.
+Only when the site sends mail.
 
 ```ts
 // src/lib/email.ts
@@ -430,39 +338,29 @@ import type { ReactElement } from 'react'
 const resend = new Resend(import.meta.env.RESEND_API_KEY)
 
 export async function sendEmail(opts: { to: string; subject: string; react: ReactElement }) {
-  const { error } = await resend.emails.send({
-    from: import.meta.env.EMAIL_FROM,
-    ...opts,
-  })
+  const { error } = await resend.emails.send({ from: import.meta.env.EMAIL_FROM, ...opts })
   if (error) throw new Error(`email send failed: ${error.message}`)
 }
 ```
 
-Call it from an Astro Action:
+From an Action:
 
 ```ts
-import { defineAction } from 'astro:actions'
-import { z } from 'astro:schema'
-import { sendEmail } from '~/lib/email'
-import { ContactEmail } from '~/emails/ContactEmail'
-
-export const server = {
-  contact: defineAction({
-    accept: 'form',
-    input: z.object({ email: z.string().email(), message: z.string().min(1).max(2000) }),
-    handler: async ({ email, message }) => {
-      await sendEmail({ to: 'team@example.com', subject: `Contact from ${email}`, react: ContactEmail({ email, message }) })
-      return { ok: true as const }
-    },
-  }),
-}
+contact: defineAction({
+  accept: 'form',
+  input: z.object({ email: z.string().email(), message: z.string().min(1).max(2000) }),
+  handler: async ({ email, message }) => {
+    await sendEmail({ to: 'team@example.com', subject: `Contact from ${email}`, react: ContactEmail({ email, message }) })
+    return { ok: true as const }
+  },
+}),
 ```
 
-Required env: `RESEND_API_KEY`, `EMAIL_FROM` (a verified sender on your Resend domain).
+Env: `RESEND_API_KEY`, `EMAIL_FROM` (verified Resend sender).
 
 ### Logging (pino)
 
-`console.log` is fine in build scripts; for SSR/Actions/middleware, use pino so request logs are JSON in production.
+`console.log` is fine in build scripts; in SSR / Actions / middleware, use pino.
 
 ```ts
 // src/lib/logger.ts
@@ -474,33 +372,33 @@ export const logger = pino({
 })
 ```
 
-Used in middleware (below) to log every server-rendered request.
+Mounted in middleware below.
 
 ### Error monitoring (Sentry)
 
-`bunx astro add @sentry/astro` wires both client and server. Configure DSN + tracing in `astro.config.mjs`:
+`bunx astro add @sentry/astro` wires client + server.
 
 ```ts
+// astro.config.mjs
 import sentry from '@sentry/astro'
 
 export default defineConfig({
-  // ...
   integrations: [
     sentry({
       dsn: import.meta.env.SENTRY_DSN,
       environment: import.meta.env.MODE,
       sourceMapsUploadOptions: { project: 'my-site', authToken: process.env.SENTRY_AUTH_TOKEN },
     }),
-    // other integrations
+    // ...
   ],
 })
 ```
 
-Errors thrown inside Actions and SSR pages are captured automatically. For client-side islands, the integration injects the browser SDK.
+Errors in Actions and SSR pages are captured automatically.
 
 ### Security middleware
 
-One `src/middleware.ts` covers security headers, request logging, and (when auth or Actions are exposed) basic rate limiting. Runs on every server-rendered request — prerendered pages are unaffected.
+`src/middleware.ts` runs on every server-rendered request (prerendered pages skip it). Security headers, request logging, and a basic rate limit on auth/Actions.
 
 ```ts
 // src/middleware.ts
@@ -524,9 +422,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   const ip = ctx.request.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'anon'
 
   if (ctx.url.pathname.startsWith('/api/auth') || ctx.url.pathname.startsWith('/_actions/')) {
-    if (!rateLimit(`${ip}:${ctx.url.pathname}`)) {
-      return new Response('Too many requests', { status: 429 })
-    }
+    if (!rateLimit(`${ip}:${ctx.url.pathname}`)) return new Response('Too many requests', { status: 429 })
   }
 
   const res = await next()
@@ -534,23 +430,19 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   res.headers.set('X-Content-Type-Options', 'nosniff')
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-  res.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'",
-  )
+  res.headers.set('Content-Security-Policy',
+    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'")
 
   logger.info({ method: ctx.request.method, path: ctx.url.pathname, status: res.status, ms: Math.round(performance.now() - start) })
   return res
 })
 ```
 
-The in-memory `Map` is fine for one Dokploy instance. Scale horizontally → swap for Redis. CSP `script-src 'self'` works for most static sites; add `'unsafe-inline'` only if you have inline `<script>` and can't move them out.
+In-memory `Map` is fine for one Dokploy instance — scale horizontally → Redis. Tighten CSP if you use `is:inline` or third-party widgets.
 
 ### SEO + RSS + Sitemap
 
-**Sitemap** is automatic once `@astrojs/sitemap` is added and `site` is set in config.
-
-**RSS** is one route:
+Sitemap is automatic once `@astrojs/sitemap` is installed and `site` is set.
 
 ```ts
 // src/pages/rss.xml.ts
@@ -573,29 +465,21 @@ export async function GET(context) {
 }
 ```
 
-**Meta tags**: keep a small `<SEO>` component in `components/` that renders title, description, canonical, OG and Twitter cards. Drive it from frontmatter.
+Meta tags: a small `<SEO>` component reading from frontmatter — title, description, canonical, OG, Twitter.
 
-### Pagefind search (optional)
+### Pagefind (optional)
 
-Pagefind builds a static search index from your built HTML. Add a post-build step:
+Build-time static index from the built HTML.
 
 ```json
-{
-  "scripts": {
-    "build": "astro build && pagefind --site dist"
-  }
-}
+{ "scripts": { "build": "astro build && pagefind --site dist" } }
 ```
-
-Then mount the UI in a layout:
 
 ```astro
 <link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
 <div id="search"></div>
 <script>
-  import('/pagefind/pagefind-ui.js').then(({ PagefindUI }) => {
-    new PagefindUI({ element: '#search' })
-  })
+  import('/pagefind/pagefind-ui.js').then(({ PagefindUI }) => new PagefindUI({ element: '#search' }))
 </script>
 ```
 
@@ -603,44 +487,26 @@ Then mount the UI in a layout:
 
 ### TypeScript
 
-`tsconfig.json` extends `astro/tsconfigs/strict` and adds:
-
-- Path alias `"~/*": ["./src/*"]`
-- `"verbatimModuleSyntax": true`
+`tsconfig.json` extends `astro/tsconfigs/strict` and adds alias `"~/*": ["./src/*"]` + `"verbatimModuleSyntax": true`.
 
 ### Biome
-
-`biome.json`:
 
 ```json
 {
   "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
-  "files": {
-    "ignoreUnknown": true,
-    "includes": ["**", "!**/dist/**", "!**/.astro/**", "!**/node_modules/**"]
-  },
+  "files": { "ignoreUnknown": true, "includes": ["**", "!**/dist/**", "!**/.astro/**", "!**/node_modules/**"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": { "enabled": true, "rules": { "recommended": true } },
   "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } }
 }
 ```
 
-`.astro` files are not yet first-class in Biome; format their `<script>` and `<style>` blocks manually or with the Prettier Astro plugin if you must. The bulk of your `.ts` and `.tsx` files are covered.
+`.astro` files aren't first-class in Biome yet — format their `<script>`/`<style>` blocks manually or with Prettier-Astro. `.ts`/`.tsx` are covered. Use `bunx biome check --write` and `bunx astro check` (type-checks `.astro`).
 
-Commands:
-
-```bash
-bunx biome check --write
-bunx astro check         # type-check .astro files
-```
-
-### lefthook (pre-commit)
-
-One canonical pre-commit hook: Biome on staged files. No husky, no pre-commit-the-tool.
-
-`lefthook.yml`:
+### lefthook
 
 ```yaml
+# lefthook.yml
 pre-commit:
   parallel: true
   commands:
@@ -650,26 +516,20 @@ pre-commit:
       stage_fixed: true
 ```
 
-Install once per clone: `bunx lefthook install`.
+`bunx lefthook install` once per clone.
 
-### GitHub Actions CI
-
-`.github/workflows/ci.yml`:
+### GitHub Actions
 
 ```yaml
+# .github/workflows/ci.yml
 name: CI
-on:
-  pull_request:
-  push:
-    branches: [main]
+on: { pull_request: {}, push: { branches: [main] } }
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bunx biome ci
       - run: bunx astro check
@@ -677,36 +537,23 @@ jobs:
       - run: bun run build
 ```
 
-`astro check` is the only place `.astro` files get type-checked — keep it in CI. Building in CI catches MDX/Content Collection schema mismatches that `astro check` alone misses.
+`astro check` is the only place `.astro` gets type-checked. Building catches MDX / Content Collection schema mismatches.
 
 ## Testing
 
 ```ts
-// src/lib/foo.test.ts
 import { describe, expect, test } from 'bun:test'
-
-describe('foo', () => {
-  test('adds', () => {
-    expect(1 + 1).toBe(2)
-  })
-})
+test('adds', () => { expect(1 + 1).toBe(2) })
 ```
 
-```bash
-bun test
-bun test --watch
-bunx astro check         # also part of CI
-```
+`bun test`, `bunx astro check`. React islands: `@testing-library/react` + `happy-dom`. `.astro` components: Playwright.
 
-For component tests on React islands, use `@testing-library/react` with `happy-dom`. For `.astro` components, integration-test via `astro:experimental` test API or Playwright.
+## Deployment: Dokploy
 
-## Deployment: Dokploy on VPS
-
-Same shape as `tanstack`: self-hosted, Docker-based, no vendor lock-in. The Astro side needs the `@astrojs/node` adapter in `standalone` mode.
-
-### Dockerfile
+Self-hosted Docker on a VPS. `@astrojs/node` in `standalone` mode for SSR; pure-static sites can skip Dokploy and use Cloudflare Pages.
 
 ```dockerfile
+# Dockerfile
 FROM oven/bun:1-alpine AS base
 WORKDIR /app
 
@@ -729,47 +576,42 @@ EXPOSE 3000
 CMD ["bun", "run", "./dist/server/entry.mjs"]
 ```
 
-For **pure static** output (no Actions, no SSR), simplify the runtime stage to serve `dist/` with Caddy or Nginx instead. Or skip Dokploy entirely and put the static build on Cloudflare Pages.
+For pure-static output: serve `dist/` with Caddy/Nginx instead.
 
-### Dokploy steps
+Setup:
 
-1. Install Dokploy on the VPS:
-   ```bash
-   curl -sSL https://dokploy.com/install.sh | sh
-   ```
-2. Create an Application, point at the Git repo, build type **Dockerfile**.
-3. If using DB: add a Postgres service in Dokploy, copy the internal connection string.
-4. Environment variables:
-   - `DATABASE_URL` (if DB) — internal hostname, not `localhost`
-   - `BETTER_AUTH_SECRET` (if auth) — `openssl rand -base64 32`
-   - `BETTER_AUTH_URL` (if auth) — public origin
-   - `SITE_URL` — public origin, also set as `site` in `astro.config.mjs`
+1. Install Dokploy: `curl -sSL https://dokploy.com/install.sh | sh`
+2. Application → repo → build type **Dockerfile**.
+3. If DB: add a Postgres service. Copy the internal connection string.
+4. Env vars:
+   - `SITE_URL` — public origin (also `site` in `astro.config.mjs`)
+   - `DATABASE_URL` (if DB) — internal hostname, never `localhost`
+   - `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL` (if auth)
    - `RESEND_API_KEY`, `EMAIL_FROM` (if mail) — verified Resend sender
-   - `SENTRY_DSN`, `SENTRY_AUTH_TOKEN` — for runtime capture and sourcemap upload
-   - `LOG_LEVEL` — `info` in prod, `debug` for incident response
-5. Enable HTTPS via the built-in Traefik + Let's Encrypt.
+   - `SENTRY_DSN`, `SENTRY_AUTH_TOKEN` — runtime + sourcemap upload (build-time)
+   - `LOG_LEVEL`
+5. Enable HTTPS (Traefik + Let's Encrypt).
 6. Enable auto-deploy on Git push.
-
-If migrations are needed, run `bunx drizzle-kit migrate` as a Dokploy pre-deploy step.
+7. If migrations: `bunx drizzle-kit migrate` pre-deploy.
 
 ## Gotchas
 
-- **Tailwind v4**: use `@tailwindcss/vite`, not the deprecated `@astrojs/tailwind`. No JS config; tokens live in CSS `@theme`. Only use the v4-compatible shadcn components.
-- **Content config location**: it's `src/content.config.ts` (Astro 5+), not `src/content/config.ts`. The old path is silently ignored.
-- **Content Layer loaders**: use `glob({ pattern, base })` from `astro/loaders` — the legacy `type: 'content'` syntax is gone.
-- **Astro Actions vs API routes**: prefer Actions for typed server functions. Use API routes only for webhooks, OAuth callbacks, RSS, sitemap, and other non-RPC endpoints.
-- **`prerender` flag**: by default with the Node adapter, pages are SSR. Set `export const prerender = true` per page (or use `output: 'static'`) for static HTML. Most pages on a content site should prerender.
-- **Postgres driver**: `postgres` (postgres.js), never `pg`. Adapter is `drizzle-orm/postgres-js`.
-- **Better Auth tables** are CLI-generated; don't hand-edit. Regenerate after upgrades and create a new migration.
-- **`import.meta.env` vs `process.env`**: in Astro code, use `import.meta.env.*`. `process.env` works only on the server and is not type-safe.
-- **React only when needed**: every React island ships JS. Use `.astro` for anything non-interactive — server data, static markup, even simple toggles via vanilla `<script>` in the .astro file.
-- **Hydration directive mismatch**: a component imported into an `.astro` file but used without `client:*` will render as static HTML with no interactivity, silently. The compiler does not warn.
-- **MDX components**: when using custom components inside MDX, pass them via the `components={{ ... }}` prop on `<Content />`. They are not auto-imported.
+- **Tailwind v4**: `@tailwindcss/vite`, not the deprecated `@astrojs/tailwind`. Tokens in CSS `@theme`.
+- **Content config location**: `src/content.config.ts` (Astro 5+); the legacy `src/content/config.ts` is silently ignored.
+- **Content Layer loaders**: `glob({ pattern, base })` — `type: 'content'` is gone.
+- **Actions vs API routes**: prefer Actions for typed RPC. API routes only for webhooks, OAuth callbacks, RSS, sitemap.
+- **`prerender` defaults to `false`** with the Node adapter — set `export const prerender = true` per page (or `output: 'static'`).
+- **Postgres driver**: `postgres-js`, never `pg`.
+- **Better Auth tables** are generated — don't hand-edit. Regenerate + new migration after upgrades.
+- **`import.meta.env`** in Astro, never `process.env.*`.
+- **React only when needed**: every island ships JS. Toggles via vanilla `<script>` in `.astro` are fine.
+- **Silent hydration mismatch**: a React component in `.astro` without `client:*` renders static, no warning. Always add a directive.
+- **MDX custom components**: pass via `components={{ ... }}` on `<Content />` — not auto-imported.
 - **Bun lockfile** is `bun.lock`. Commit it.
-- **Cloudflare adapter**: works, but Better Auth and `postgres` assume long-lived connections — pure edge deployments may need adjustments. Node adapter on VPS is the path of least resistance.
-- **Middleware runs only on SSR**: prerendered pages never hit `src/middleware.ts`. Security headers on static HTML must be set by the reverse proxy (Traefik in Dokploy) or via `<meta http-equiv>`. The middleware path covers Actions, auth routes, and any `export const prerender = false` page.
-- **In-memory rate limit doesn't survive scaling**: the `Map` in `src/middleware.ts` is per-process. One Dokploy app instance is fine; horizontal scaling → Redis (or move that route to the tanstack-style backend).
-- **Sentry sourcemaps need `SENTRY_AUTH_TOKEN` at build time**: without it, the integration silently skips upload and you get minified stack traces in production. Add it to Dokploy's build env, not just runtime.
-- **Resend sender domain**: `EMAIL_FROM` must be on a domain verified in Resend. Better Auth's verify/reset flows fail silently otherwise — only the Resend dashboard shows the rejection.
-- **`console.log` in committed code**: forbidden in SSR/Actions/middleware. Use the imported `logger`. Build scripts and `.astro` frontmatter that runs at build time are exempt.
-- **CSP and inline scripts**: Astro's `<script>` blocks in `.astro` files compile to external bundles by default — they pass `script-src 'self'`. But if you use `is:inline` or third-party widgets, the policy needs adjustment or a per-route nonce.
+- **Cloudflare adapter**: works, but Better Auth and `postgres` assume long-lived connections. Node + VPS is the easy path.
+- **Middleware runs only on SSR**: prerendered pages skip it — set static headers in the reverse proxy.
+- **In-memory rate limit doesn't survive scaling**: one Dokploy instance is fine; otherwise Redis.
+- **Sentry sourcemaps need `SENTRY_AUTH_TOKEN` at build time**, not just runtime — otherwise minified stack traces.
+- **Resend sender**: `EMAIL_FROM` must be on a verified domain — Better Auth flows fail silently otherwise.
+- **`console.log` banned** in SSR / Actions / middleware. Build scripts and `.astro` frontmatter are exempt.
+- **CSP and inline scripts**: Astro `<script>` blocks compile to bundles (`script-src 'self'` works). `is:inline` or third-party widgets need policy adjustments.

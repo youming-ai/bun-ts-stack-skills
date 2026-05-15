@@ -8,8 +8,8 @@ The two skills are siblings — they share a foundation (Bun runtime, Drizzle, B
 
 | Skill                                                | Use when the project is…                              |
 | ---------------------------------------------------- | ----------------------------------------------------- |
-| [`tanstack-bun`](./tanstack-bun/)        | An app — SaaS, dashboard, internal tool, anything behind login with complex state. Top layer: TanStack Start + Hono. |
-| [`astro-bun`](./astro-bun/)              | A content site — blog, docs, marketing, portfolio, landing page. Top layer: Astro + Content Collections. |
+| [`tanstack`](./tanstack/)        | An app — SaaS, dashboard, internal tool, anything behind login with complex state. Top layer: TanStack Start + Hono. |
+| [`astro`](./astro/)              | A content site — blog, docs, marketing, portfolio, landing page. Top layer: Astro + Content Collections. |
 
 Install one, the other, or both. If a single project has both (e.g. an app at `app.example.com` and a marketing site at `example.com`), keep both installed — Claude will pick the right one per task.
 
@@ -18,16 +18,16 @@ Install one, the other, or both. If a single project has both (e.g. an app at `a
 ```
 Is the primary deliverable…
 ├── articles, docs, marketing pages, with SEO as a hard requirement?
-│      → astro-bun
+│      → astro
 └── an authenticated app with persistent state and complex interactions?
-       → tanstack-bun
+       → tanstack
 ```
 
 Edge cases:
 
-- **Documentation for a SaaS product** → `astro-bun` (the docs are content; the product is separate)
+- **Documentation for a SaaS product** → `astro` (the docs are content; the product is separate)
 - **Dashboard with public marketing pages** → run two sub-projects, one each
-- **Blog with comments / likes / subscribe** → still `astro-bun`. Astro Actions handle the light dynamic parts; you don't need a full app framework
+- **Blog with comments / likes / subscribe** → still `astro`. Astro Actions handle the light dynamic parts; you don't need a full app framework
 
 ## Shared foundation
 
@@ -57,8 +57,8 @@ When changing the shared foundation (e.g. switching ORM), update **both** SKILL.
 
 Download from the [latest release](../../releases):
 
-- `tanstack-bun.skill`
-- `astro-bun.skill`
+- `tanstack.skill`
+- `astro.skill`
 
 Upload either or both in Claude's skill settings.
 
@@ -68,8 +68,8 @@ Upload either or both in Claude's skill settings.
 git clone https://github.com/<your-handle>/bun-ts-stack-skills.git
 cd bun-ts-stack-skills
 ./build.sh
-# → dist/tanstack-bun.skill
-# → dist/astro-bun.skill
+# → dist/tanstack.skill
+# → dist/astro.skill
 ```
 
 Then upload the `.skill` files in Claude.

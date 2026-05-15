@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SKILLS=(tanstack-bun astro-bun)
+SKILLS=(tanstack astro)
 DIST="dist"
 
 mkdir -p "$DIST"

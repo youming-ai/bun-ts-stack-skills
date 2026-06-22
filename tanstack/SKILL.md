@@ -61,6 +61,19 @@ TanStack Start  (SSR + file-based routing)
 - **Better Auth** plugs into Hono as handler, Drizzle as schema.
 - One **Zod schema** per concept in `src/schemas/`, shared by Hono / Form / Drizzle.
 
+### Rendering strategy
+
+TanStack Start supports per-route rendering:
+
+| Route type | Mode | How |
+|---|---|---|
+| Data-independent (landing, blog, about) | Static (SSG) | `export const prerender = true` |
+| Per-request data (dashboard, account) | Server (SSR) | default |
+| Purely client-rendered (SPA fallback) | CSR | `export const ssr = false` |
+
+Server functions can also be cached at build time for static generation — see
+[TanStack docs on Static Server Functions](https://tanstack.com/start/latest/docs/framework/react/guides/static-server-functions).
+
 ## Project structure
 
 ```
@@ -368,6 +381,16 @@ No `tailwind.config.js` — tokens live in `@theme`. shadcn/ui must use its v4 m
 
 `tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`.
 
+### Environment variables
+
+| Scope | Convention | Access |
+|---|---|---|
+| Public (client-safe) | `VITE_` prefix | `import.meta.env.VITE_FOO` |
+| Server-only | no prefix | `process.env.FOO` |
+
+Never expose `DATABASE_URL`, `BETTER_AUTH_SECRET`, or other server-only values
+to client bundles. The build strips non-`VITE_` variables automatically.
+
 ### lefthook
 
 ```yaml
@@ -402,6 +425,29 @@ jobs:
 ```
 
 Add a `services: postgres:` block if tests touch the DB.
+
+### For AI tooling
+
+Conventions that help AI models generate correct, server-safe code.
+
+**File naming** (TanStack official):
+- `*.functions.ts` — `createServerFn` wrappers, safe to import anywhere
+- `*.server.ts` — server-only code (DB queries, secret reads), only imported inside server function handlers
+- `*.ts` (no suffix) — client-safe code (types, schemas, constants)
+
+**Import boundaries**:
+- `@tanstack/react-start/server-only` — marks a module as server-only; importing it in client code triggers a build error
+
+**Co-location**:
+- Place server functions next to the component that uses them
+- Don't group by layer (controllers/, services/) — group by feature
+
+**Rules for AI**:
+- Use `createServerFn`, never `"use server"` directives (Next.js pattern)
+- Use TanStack Router, not React Router
+- `process.env.X` for server-only, `import.meta.env.VITE_X` for public
+- Loaders handle data fetching; never use `getServerSideProps` or `getStaticProps`
+- TanStack's built-in CSRF middleware (`createCsrfMiddleware`) protects server functions by default; add it explicitly if you define `src/start.ts`
 
 ## Testing
 
@@ -452,6 +498,58 @@ Setup:
 5. Enable HTTPS (Traefik + Let's Encrypt). Add domain.
 6. Enable auto-deploy on Git push.
 7. Pre-deploy: `bunx drizzle-kit migrate`.
+
+### Alternative: Cloudflare Workers
+
+For scale-to-zero, edge latency, and no VPS management. This path deviates
+from the non-negotiables above — to take it, make the following swaps.
+All other tools (Resend, Sentry, Tailwind, Biome, lefthook, GitHub Actions)
+work as-is.
+
+| Default (VPS) | Swap to | Why |
+|---|---|---|
+| `postgres` driver | `@neondatabase/serverless` (HTTP) | Workers can't hold long-lived TCP |
+| Better Auth | Clerk, Auth0, or Supabase Auth | Better Auth assumes Node + long-lived DB |
+| Drizzle + postgres-js | Drizzle + `drizzle-orm/neon-http` | Same ORM, HTTP adapter |
+| Dokploy + Docker | `wrangler deploy` | Workers builds from source |
+| `process.env.X` | `c.env.X` (Hono) / server function request | Workers bindings, not Node process |
+
+**Setup**:
+
+```bash
+bun create tsrouter-app@latest my-app && cd my-app
+bun add @neondatabase/serverless drizzle-orm
+bun add -d wrangler
+# Auth: use Clerk or edge-compatible provider
+```
+
+**Wrangler config** (`wrangler.toml`):
+
+```toml
+[vars]
+PUBLIC_ORIGIN = "https://my-app.example.com"
+# Secrets: `wrangler secret put DATABASE_URL` (not in toml)
+```
+
+**Env access**:
+
+```ts
+// Hono handler — use c.env (Workers bindings object)
+app.use('*', cors({ origin: c.env.PUBLIC_ORIGIN, credentials: true }))
+```
+
+Note: TanStack Start server functions don't expose `c.env` directly.
+Use one of: (a) Hono middleware that injects env into context, (b) `process.env`
+with Wrangler `--compatibility-flags nodejs_compat`, or (c) a small Hono wrapper
+that calls the server function. The simplest path is to keep server logic in
+Hono handlers where `c.env` is available natively.
+
+**Gotchas**:
+- No long-lived connections: every request = new HTTP round-trip
+- Cold start: ~50–100ms first request; subsequent are fast
+- CPU time limit: 30s (free) / 5min (paid)
+- `process.env` does not exist on Workers — always use `c.env` or bindings
+- No Node built-ins (`fs`, `child_process`, `crypto` partial) — use Workers equivalents
 
 ## Gotchas
 

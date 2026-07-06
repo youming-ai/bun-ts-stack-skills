@@ -1,6 +1,6 @@
 # bun-ts-stack-skills
 
-A pair of [Claude skills](https://www.anthropic.com/news/skills) for full-stack TypeScript work on the **Bun** ecosystem. The two are siblings — same foundation, different top layer depending on whether the project is **app-driven** or **content-driven**.
+A pair of [Claude skills](https://www.anthropic.com/news/skills) for full-stack TypeScript work on the **Bun** ecosystem, deployed to **Cloudflare Workers**. The two are siblings — identical foundation (runtime, deploy, data, auth), differing only in the top layer depending on whether the project is **app-driven** or **content-driven**.
 
 ## The skills
 
@@ -33,10 +33,12 @@ Both skills assume:
 
 | Layer       | Choice                                |
 | ----------- | ------------------------------------- |
-| Runtime     | Bun (also pkg manager, test, scripts) |
+| Dev runtime | Bun (also pkg manager, test, scripts) |
+| Prod runtime | Cloudflare Workers (V8 isolate)      |
 | Language    | TypeScript (strict)                   |
 | ORM         | Drizzle + Drizzle Kit                 |
-| Database    | PostgreSQL (`postgres` driver)        |
+| Database    | Self-hosted PostgreSQL via Cloudflare Hyperdrive |
+| KV          | Cloudflare KV (sessions, rate-limit, cache) |
 | Auth        | Better Auth                           |
 | CSS         | Tailwind v4 (`@tailwindcss/vite`)     |
 | UI          | shadcn/ui + lucide-react              |
@@ -47,12 +49,14 @@ Both skills assume:
 | Lint/Format | Biome                                 |
 | Git hooks   | lefthook                              |
 | Test        | `bun test`                            |
-| CI          | GitHub Actions                        |
-| Deploy      | Dokploy on VPS (Docker)               |
+| CI/CD       | GitHub Actions + `wrangler deploy`    |
+| Deploy      | Cloudflare Workers                    |
+
+They diverge only at the top layer: `tanstack` renders an app with TanStack Start + Hono; `astro` renders content with Astro + Content Collections. Everything below — runtime, deploy, data, auth — is identical.
 
 Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`/`pre-commit`, `winston`/`bunyan`, deprecated framework integrations.
 
-When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit — they stay in lockstep.
+When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit — they stay in lockstep on the shared layer.
 
 ## Install
 

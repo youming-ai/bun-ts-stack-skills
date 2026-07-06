@@ -1,6 +1,6 @@
 # bun-ts-stack-skills
 
-A pair of [Claude skills](https://www.anthropic.com/news/skills) for full-stack TypeScript work on the **Bun** ecosystem. The two are siblings — same foundation, different top layer and deploy target depending on whether the project is **app-driven** or **content-driven**.
+A pair of [Claude skills](https://www.anthropic.com/news/skills) for full-stack TypeScript work on the **Bun** ecosystem, deployed to **Cloudflare Workers**. The two are siblings — identical foundation (runtime, deploy, data, auth), differing only in the top layer depending on whether the project is **app-driven** or **content-driven**.
 
 ## The skills
 

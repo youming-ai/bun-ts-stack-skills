@@ -42,7 +42,8 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, deployed to 
 - Production runs on **Cloudflare Workers** — a V8 isolate, not Node. Runtime code must be Workers-compatible: Web-standard APIs (`fetch`, Web Crypto, Streams), no Node built-ins unless `nodejs_compat` is enabled.
 - Prefer Web-standard APIs over Bun-specific ones (`Bun.password`, `bun:sqlite`, `Bun.s3`) in runtime code, so the same code runs under Bun (dev/test) and Workers (prod). Better Auth hashes via Web Crypto — no `bcrypt`/`argon2` needed.
 - TypeScript `strict: true` everywhere.
-- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `vitest`, `bcrypt`, `argon2`, `pg`, `node-fetch`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`.
+- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`.
+- Default to `bun test`; use `vitest` only for Cloudflare Workers integration tests that need the real Workers runtime or bindings. Default to `postgres` (postgres.js) with Drizzle; use `pg` only when library interop or an official Cloudflare path requires it.
 
 ## Architecture
 
@@ -75,7 +76,7 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, deployed to 
 - **Better Auth** plugs into Hono as handler, Drizzle as schema.
 - One **Zod schema** per concept in `src/schemas/`, shared by Hono / Form / Drizzle.
 - Secrets come from **Worker bindings** (`c.env`), never `process.env` (empty on Workers unless `nodejs_compat`). Public values use the `VITE_` prefix.
-- Bindings (Hyperdrive, KV, secrets) exist only at **request time** — build the DB client and Better Auth per request, never at module top level. Sessions and rate-limit state live in **KV** so they survive across isolates.
+- Bindings (Hyperdrive, KV, secrets) exist only at **request time** — build the DB client and Better Auth per request, never at module top level. KV is for session/cache acceleration and approximate rate-limit state; anything needing immediate revocation, atomic counters, or strong consistency stays in Postgres or a Durable Object.
 
 ### Rendering strategy
 
@@ -209,6 +210,8 @@ export default defineConfig({
 
 Workflow: `bunx drizzle-kit generate` → `migrate`; `studio` for GUI.
 
+For routes that make several DB round trips per request, consider Smart Placement so the Worker can run closer to the database. Do not enable it blindly on asset-heavy or mostly-static Workers; split a DB-heavy backend Worker behind a service binding if frontend latency starts to suffer.
+
 ### Better Auth
 
 Better Auth needs the DB, and both are request-scoped on Workers — wrap them in a factory.
@@ -225,7 +228,8 @@ import { ResetPasswordEmail, VerifyEmail } from '~/emails'
 export function createAuth(db: DB, env: Env) {
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg' }),
-    // KV holds sessions + Better Auth's own rate-limit state, so both survive across isolates
+    // KV is secondary storage for session/cache acceleration and approximate rate-limit state.
+    // Keep strong-consistency decisions in Postgres or a Durable Object.
     secondaryStorage: {
       get: (key) => env.KV.get(key),
       set: (key, value, ttl) => env.KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined),
@@ -254,7 +258,7 @@ export const authClient = createAuthClient()
 export const { signIn, signOut, signUp, useSession } = authClient
 ```
 
-Read session on the server: `await auth.api.getSession({ headers: request.headers })` (build `auth` per request via `createAuth`). Re-run `bunx @better-auth/cli generate` + a new Drizzle migration after every Better Auth upgrade.
+Read session on the server: `await auth.api.getSession({ headers: request.headers })` (build `auth` per request via `createAuth`). If immediate session revocation matters, keep the canonical session check in Postgres or route revocation through a Durable Object; KV is eventually consistent. Re-run `bunx @better-auth/cli generate` + a new Drizzle migration after every Better Auth upgrade.
 
 ### Email (Resend + React Email)
 
@@ -349,7 +353,7 @@ app.on(['GET', 'POST'], '/auth/*', async (c) => {
 })
 ```
 
-`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. The in-memory limiter is best-effort per isolate; for hard limits back it with KV or a Durable Object.
+`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. The in-memory limiter is best-effort per isolate. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
 
 ### TanStack Form + Zod
 
@@ -513,7 +517,7 @@ import { describe, expect, test } from 'bun:test'
 test('adds', () => { expect(1 + 1).toBe(2) })
 ```
 
-`bun test`, `--watch`, `--coverage`. DB tests: real Postgres in Docker on a test port, reset between suites, never mock the ORM. `bun test` runs under Bun locally — keep runtime code Web-standard so it behaves the same on Workers.
+`bun test`, `--watch`, `--coverage`. DB tests: real Postgres in Docker on a test port, reset between suites, never mock the ORM. `bun test` runs under Bun locally — keep runtime code Web-standard so it behaves the same on Workers. For Workers-only behavior (bindings, `ctx.waitUntil`, Durable Objects, Hyperdrive local bindings), allow the official Cloudflare Vitest pool in a separate integration-test setup.
 
 ## Deployment: Cloudflare Workers
 
@@ -552,13 +556,14 @@ Setup:
 - **Bindings are request-time only** — build the DB client and Better Auth inside the handler from `c.env`, never at module top level. Module-level `postgres(...)` calls have no binding and break on Workers.
 - **`nodejs_compat` is required** for `postgres.js` (it needs the Node `net` polyfill). Set `compatibility_flags = ["nodejs_compat"]`.
 - **Hyperdrive vs migrations**: runtime reads the connection string from `env.HYPERDRIVE.connectionString`; `drizzle-kit` migrations connect to `DATABASE_URL` directly (Hyperdrive isn't a migration endpoint).
+- **Smart Placement**: consider it for DB-heavy routes with multiple backend round trips; avoid it for static/asset-heavy Workers unless you split backend logic into a separate Worker.
 - **`process.env` is empty on Workers** unless `nodejs_compat` — read config from `c.env` / bindings.
 - **No Lambda-style cold start**: V8 isolates start in ms. But there's **no persistent state between requests** — don't cache a DB pool at module scope expecting reuse.
 - **CPU time limit**: 30s default on paid (configurable up to 5 min); wall-clock for I/O is not counted. Free tier is tightly limited.
-- **Rate-limit key**: on Cloudflare use `cf-connecting-ip`, never `x-forwarded-for`. In-memory limits don't span isolates — Better Auth's limiter is backed by the KV `secondaryStorage`; for exact per-key counts use a Durable Object.
-- **KV is eventually consistent** and read-cached (~60s): great for sessions and cache, wrong for anything needing immediate global read-after-write or atomic counters — use a Durable Object there.
+- **Rate-limit key**: on Cloudflare use `cf-connecting-ip`, never `x-forwarded-for`. In-memory limits don't span isolates; KV is only approximate. For exact per-key counts use a Durable Object or Cloudflare's rate limiting binding.
+- **KV is eventually consistent** and read-cached (~60s): useful for session/cache acceleration and approximate throttles, wrong for immediate global revocation, read-after-write, or atomic counters — use Postgres or a Durable Object there.
 - **Tailwind v4** has no JS config — tokens in CSS `@theme`. Use v4-compatible shadcn only.
-- **Postgres driver**: `postgres-js`, never `pg`. Adapter is `drizzle-orm/postgres-js`.
+- **Postgres driver**: default to `postgres-js` with `drizzle-orm/postgres-js`; allow `pg` only when a dependency or official Cloudflare integration makes it the safer path.
 - **Hono mount**: catch-all must be `src/routes/api/$.ts`. Don't share paths with server functions — silent 404s.
 - **Better Auth tables** are generated; never hand-edit `src/db/auth-schema.ts`. Regenerate + new migration after upgrades.
 - **Better Auth on Workers** hashes via Web Crypto (scrypt) — no `bcrypt`/`argon2`, which don't run on Workers anyway.

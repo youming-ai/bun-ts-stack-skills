@@ -4,6 +4,8 @@
 **Source**: Lessons from Lovable's TanStack Start blog post + TanStack official docs
 **Scope**: `tanstack/SKILL.md` only; `astro/SKILL.md` unchanged
 
+> **Status:** Historical design note. Superseded by the 2026-07-06 move to Cloudflare Workers + KV + Hyperdrive as the primary shared foundation for both `tanstack` and `astro`. Treat this file as rationale for earlier edits, not as the current stack contract.
+
 ## Context
 
 Lovable published a post detailing their migration to TanStack Start. Three practices stood out as directly applicable to the existing `tanstack` skill:

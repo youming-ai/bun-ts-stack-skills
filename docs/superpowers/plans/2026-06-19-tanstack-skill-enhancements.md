@@ -4,6 +4,8 @@
 
 **Goal:** Add 4 new sections to `tanstack/SKILL.md` — rendering strategy, environment variables, AI tooling conventions, and Cloudflare Workers alternative deployment.
 
+> **Status:** Historical implementation plan. Superseded by the 2026-07-06 move to Cloudflare Workers + KV + Hyperdrive as the primary shared foundation for both `tanstack` and `astro`. Current behavior lives in `README.md`, `tanstack/SKILL.md`, and `astro/SKILL.md`.
+
 **Architecture:** Single-file edit to `tanstack/SKILL.md`. Insertions are done bottom-to-top to avoid line-number drift. Each task inserts one section, verifies it reads correctly, and commits.
 
 **Tech Stack:** Markdown editing only. No code, no tests, no dependencies.

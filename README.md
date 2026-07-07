@@ -29,7 +29,7 @@ Edge cases:
 
 ## Shared foundation
 
-Both skills assume:
+Both skills share these defaults. In `astro`, DB/auth/Worker runtime pieces are optional when the site is pure static content.
 
 | Layer       | Choice                                |
 | ----------- | ------------------------------------- |
@@ -38,7 +38,7 @@ Both skills assume:
 | Language    | TypeScript (strict)                   |
 | ORM         | Drizzle + Drizzle Kit                 |
 | Database    | Self-hosted PostgreSQL via Cloudflare Hyperdrive |
-| KV          | Cloudflare KV (sessions, rate-limit, cache) |
+| KV          | Cloudflare KV (session/cache acceleration, approximate rate-limit) |
 | Auth        | Better Auth                           |
 | CSS         | Tailwind v4 (`@tailwindcss/vite`)     |
 | UI          | shadcn/ui + lucide-react              |
@@ -48,13 +48,13 @@ Both skills assume:
 | Monitoring  | Sentry                                |
 | Lint/Format | Biome                                 |
 | Git hooks   | lefthook                              |
-| Test        | `bun test`                            |
+| Test        | `bun test` by default; Cloudflare Vitest only for Workers integration |
 | CI/CD       | GitHub Actions + `wrangler deploy`    |
 | Deploy      | Cloudflare Workers                    |
 
-They diverge only at the top layer: `tanstack` renders an app with TanStack Start + Hono; `astro` renders content with Astro + Content Collections. Everything below — runtime, deploy, data, auth — is identical.
+They diverge only at the top layer: `tanstack` renders an app with TanStack Start + Hono; `astro` renders content with Astro + Content Collections. Everything below follows the same defaults, with `astro` allowed to omit Workers/DB/auth when the site is pure static.
 
-Both skills forbid the same things: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`/`vitest`, `bcrypt`/`argon2`, `pg`, `eslint`, `prettier`, `nodemailer`, `husky`/`pre-commit`, `winston`/`bunyan`, deprecated framework integrations.
+Both skills forbid the same default tool drift: `npm`/`pnpm`/`yarn`/`node` as CLIs, `dotenv`, `ts-node`/`tsx`, `nodemon`, `jest`, `bcrypt`/`argon2`, `eslint`, `prettier`, `nodemailer`, `husky`/`pre-commit`, `winston`/`bunyan`, deprecated framework integrations. Two escape hatches are explicit: `vitest` is allowed only for Cloudflare Workers integration tests that need the real runtime/bindings, and `pg` is allowed only when library interop or an official Cloudflare path requires it.
 
 When changing the shared foundation (e.g. switching ORM), update **both** SKILL.md files in the same commit — they stay in lockstep on the shared layer.
 

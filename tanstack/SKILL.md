@@ -29,7 +29,7 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, deployed to 
 | Email          | Resend + React Email                                    |
 | Logging        | pino + `hono-pino`                                      |
 | Monitoring     | Sentry (`@sentry/cloudflare` + `@sentry/tanstackstart-react`) |
-| Security       | `hono/cors`, `hono/secure-headers`, `hono-rate-limiter` |
+| Security       | `hono/cors`, `hono/secure-headers`, KV-backed rate limiter |
 | Lint/Format    | Biome                                                   |
 | Git hooks      | lefthook                                                |
 | Test           | `bun test`                                              |
@@ -128,7 +128,7 @@ bun create tsrouter-app@latest my-app && cd my-app
 # Runtime
 bun add hono drizzle-orm postgres better-auth zod @tanstack/react-form
 bun add resend react-email @react-email/components
-bun add pino hono-pino hono-rate-limiter
+bun add pino hono-pino
 bun add @sentry/cloudflare @sentry/tanstackstart-react
 bun add tailwindcss @tailwindcss/vite
 
@@ -330,18 +330,28 @@ CORS, secure headers, and a rate limit on `/auth/*` are non-negotiable.
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { secureHeaders } from 'hono/secure-headers'
-import { rateLimiter } from 'hono-rate-limiter'
 
 export const app = new Hono().basePath('/api')
+
+// KV-backed so counts survive across isolates (approximate — KV is eventually consistent)
+async function rateLimit(kv: KVNamespace, key: string, limit = 20, windowSec = 900) {
+  const n = Number((await kv.get(key)) ?? 0) + 1
+  await kv.put(key, String(n), { expirationTtl: windowSec })
+  return n <= limit
+}
 
 app.use('*', secureHeaders())
 app.use('*', (c, next) =>
   cors({ origin: c.env.PUBLIC_ORIGIN, credentials: true })(c, next))
-app.use('/auth/*', rateLimiter({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  keyGenerator: (c) => c.req.header('cf-connecting-ip') ?? 'anon',
-}))
+
+app.use('/auth/*', async (c, next) => {
+  const ip = c.req.header('cf-connecting-ip') ?? 'anon'
+  const kv = c.env.KV
+  if (!(await rateLimit(kv, `rate-limit:${ip}:${c.req.path}`, 20, 900))) {
+    return c.text('Too many requests', 429)
+  }
+  await next()
+})
 
 // Build request-scoped db + auth from bindings, then delegate to the handler
 app.on(['GET', 'POST'], '/auth/*', async (c) => {
@@ -353,7 +363,7 @@ app.on(['GET', 'POST'], '/auth/*', async (c) => {
 })
 ```
 
-`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. The in-memory limiter is best-effort per isolate. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
+`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. Note that this simple KV rate-limiting implementation refreshes the TTL on every request. Under sustained traffic, the key will not expire at a fixed time boundary but will instead keep pushing the TTL forward, potentially causing over-blocking for a legitimate user until they remain idle for the full `windowSec` duration. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
 
 ### TanStack Form + Zod
 

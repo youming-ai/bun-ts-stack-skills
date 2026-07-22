@@ -497,7 +497,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 })
 ```
 
-Use `cf-connecting-ip` for the real client IP. For exact per-key counts use a Durable Object. Tighten CSP if you use `is:inline` or third-party widgets. Prerendered pages skip middleware — set static headers in Cloudflare's response rules if needed.
+Use `cf-connecting-ip` for the real client IP. Note that this simple KV rate-limiting implementation refreshes the TTL on every request. Under sustained traffic, the key will not expire at a fixed time boundary but will instead keep pushing the TTL forward, potentially causing over-blocking for a legitimate user until they remain idle for the full `windowSec` duration. For exact per-key counts use a Durable Object. Tighten CSP if you use `is:inline` or third-party widgets. Prerendered pages skip middleware — set static headers in Cloudflare's response rules if needed.
 
 ### SEO + RSS + Sitemap
 

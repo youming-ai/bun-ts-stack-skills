@@ -469,9 +469,11 @@ import { defineMiddleware } from 'astro:middleware'
 import { logger } from '~/lib/logger'
 
 // KV-backed so counts survive across isolates (approximate — KV is eventually consistent)
-async function rateLimit(kv: KVNamespace, key: string, limit = 20, windowSec = 900) {
+async function rateLimit(kv: KVNamespace, keyPrefix: string, limit = 20, windowSec = 900) {
+  const windowId = Math.floor(Date.now() / 1000 / windowSec)
+  const key = `${keyPrefix}:${windowId}`
   const n = Number((await kv.get(key)) ?? 0) + 1
-  await kv.put(key, String(n), { expirationTtl: windowSec })
+  await kv.put(key, String(n), { expirationTtl: windowSec * 2 })
   return n <= limit
 }
 
@@ -497,7 +499,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 })
 ```
 
-Use `cf-connecting-ip` for the real client IP. For exact per-key counts use a Durable Object. Tighten CSP if you use `is:inline` or third-party widgets. Prerendered pages skip middleware — set static headers in Cloudflare's response rules if needed.
+Use `cf-connecting-ip` for the real client IP. The KV rate limiter uses a fixed window based on time intervals, which is approximate due to eventual consistency. For exact per-key counts use a Durable Object. Tighten CSP if you use `is:inline` or third-party widgets. Prerendered pages skip middleware — set static headers in Cloudflare's response rules if needed.
 
 ### SEO + RSS + Sitemap
 

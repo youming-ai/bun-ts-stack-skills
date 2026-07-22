@@ -334,9 +334,11 @@ import { secureHeaders } from 'hono/secure-headers'
 export const app = new Hono().basePath('/api')
 
 // KV-backed so counts survive across isolates (approximate — KV is eventually consistent)
-async function rateLimit(kv: KVNamespace, key: string, limit = 20, windowSec = 900) {
+async function rateLimit(kv: KVNamespace, keyPrefix: string, limit = 20, windowSec = 900) {
+  const windowId = Math.floor(Date.now() / 1000 / windowSec)
+  const key = `${keyPrefix}:${windowId}`
   const n = Number((await kv.get(key)) ?? 0) + 1
-  await kv.put(key, String(n), { expirationTtl: windowSec })
+  await kv.put(key, String(n), { expirationTtl: windowSec * 2 })
   return n <= limit
 }
 
@@ -363,7 +365,7 @@ app.on(['GET', 'POST'], '/auth/*', async (c) => {
 })
 ```
 
-`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. Note that this simple KV rate-limiting implementation refreshes the TTL on every request. Under sustained traffic, the key will not expire at a fixed time boundary but will instead keep pushing the TTL forward, potentially causing over-blocking for a legitimate user until they remain idle for the full `windowSec` duration. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
+`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. The KV rate limiter uses a fixed window based on time intervals, which is approximate due to eventual consistency. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
 
 ### TanStack Form + Zod
 

@@ -1,94 +1,107 @@
 ---
 name: tanstack
-description: Full-stack TypeScript conventions for apps on the Bun + TanStack Start ecosystem, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Hono, Drizzle ORM, self-hosted PostgreSQL via Cloudflare Hyperdrive, Better Auth, Tailwind v4, shadcn/ui, TanStack Form, Zod, Resend, pino, Sentry, lefthook, GitHub Actions, Biome, bun test, and wrangler. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "add logging", "rate limit", "CI pipeline", "Drizzle schema", "mount Hono", "deploy to Cloudflare", "Workers", "Hyperdrive", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, since it is the project's canonical stack and other choices should be checked against it.
+description: All-in-Cloudflare TypeScript conventions for apps on Bun + TanStack Start, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Drizzle ORM, Cloudflare D1, R2, KV, Better Auth, Cloudflare Email Sending, Tailwind v4, shadcn/ui, TanStack Form, Zod, Vitest, and wrangler. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "upload files", "rate limit", "CI pipeline", "Drizzle schema", "server function", "deploy to Cloudflare", "Workers", "D1", "R2", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, since it is the project's canonical stack and other choices should be checked against it.
 ---
 
-# TanStack Bun Stack
+# TanStack Start on Cloudflare
 
-Conventions for full-stack TypeScript apps on Bun + TanStack Start, deployed to Cloudflare Workers. Source of truth for stack choices, layout, integrations, and deploy. Deviate only with explicit reason.
+Conventions for full-stack TypeScript apps on Bun + TanStack Start, running entirely on Cloudflare. Source of truth for stack choices, layout, integrations, and deploy. Deviate only with explicit reason.
+
+**Everything is a Cloudflare binding.** No external database, no external mail provider, no separate API server. One Worker, one `wrangler deploy`.
 
 ## Stack
 
-| Layer          | Choice                                                  |
-| -------------- | ------------------------------------------------------- |
-| Dev runtime    | Bun (package manager, test, scripts)                    |
-| Prod runtime   | Cloudflare Workers (V8 isolate)                         |
-| Language       | TypeScript (strict)                                     |
-| Framework      | TanStack Start                                          |
-| Build          | Vite                                                    |
-| API            | Hono                                                    |
-| ORM            | Drizzle + Drizzle Kit                                   |
-| Database       | Self-hosted PostgreSQL via Cloudflare Hyperdrive        |
-| DB driver      | `postgres` (postgres.js) over Workers TCP               |
-| KV             | Cloudflare KV (Better Auth secondary storage, edge cache) |
-| Auth           | Better Auth                                             |
-| CSS            | Tailwind v4 (`@tailwindcss/vite`)                       |
-| UI             | shadcn/ui + lucide-react                                |
-| Forms          | TanStack Form                                           |
-| Validation     | Zod                                                     |
-| Email          | Resend + React Email                                    |
-| Logging        | pino + `hono-pino`                                      |
-| Monitoring     | Sentry (`@sentry/cloudflare` + `@sentry/tanstackstart-react`) |
-| Security       | `hono/cors`, `hono/secure-headers`, KV-backed rate limiter |
-| Lint/Format    | Biome                                                   |
-| Git hooks      | lefthook                                                |
-| Test           | `bun test`                                              |
-| CI/CD          | GitHub Actions + `wrangler deploy`                      |
-| Deploy         | Cloudflare Workers                                      |
+| Layer        | Choice                                          |
+| ------------ | ----------------------------------------------- |
+| Dev runtime  | Bun (package manager, scripts)                  |
+| Prod runtime | Cloudflare Workers (V8 isolate)                 |
+| Language     | TypeScript (strict)                             |
+| Framework    | TanStack Start (React 19 + TanStack Router)     |
+| Build        | Vite + `@cloudflare/vite-plugin`                |
+| API          | Server functions + route `server.handlers`      |
+| ORM          | Drizzle + Drizzle Kit                           |
+| Database     | Cloudflare D1 (SQLite)                          |
+| KV           | Cloudflare KV (session cache, auth rate limits) |
+| Auth         | Better Auth                                     |
+| Email        | Cloudflare Email Sending (`send_email` binding) |
+| CSS          | Tailwind v4 (`@tailwindcss/vite`)               |
+| UI           | shadcn/ui (Radix + Tailwind) + lucide-react     |
+| Forms        | TanStack Form                                   |
+| Validation   | Zod                                             |
+| Logs         | Workers Observability (`console` + Workers Logs)|
+| Test         | Vitest + `@cloudflare/vitest-pool-workers`      |
+| Deploy       | `bunx wrangler deploy`                          |
 
 ### Non-negotiables
 
-- Bun is the dev runtime: package manager, test runner, script runner. Never `npm` / `pnpm` / `yarn` / `node`.
-- Production runs on **Cloudflare Workers** — a V8 isolate, not Node. Runtime code must be Workers-compatible: Web-standard APIs (`fetch`, Web Crypto, Streams), no Node built-ins unless `nodejs_compat` is enabled.
-- Prefer Web-standard APIs over Bun-specific ones (`Bun.password`, `bun:sqlite`, `Bun.s3`) in runtime code, so the same code runs under Bun (dev/test) and Workers (prod). Better Auth hashes via Web Crypto — no `bcrypt`/`argon2` needed.
+- Bun is the dev runtime: package manager and script runner. Never `npm` / `pnpm` / `yarn` / `node`. (Tests run in workerd via Vitest, not in Bun.)
+- Production runs on **Cloudflare Workers** — a V8 isolate, not Node. Runtime code uses Web-standard APIs (`fetch`, Web Crypto, Streams).
+- No Bun-specific APIs (`Bun.password`, `bun:sqlite`, `Bun.s3`) in runtime code — it never executes under Bun. Dev, test, and prod all run on workerd.
+- **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level.
 - TypeScript `strict: true` everywhere.
-- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`.
-- Default to `bun test`; use `vitest` only for Cloudflare Workers integration tests that need the real Workers runtime or bindings. Default to `postgres` (postgres.js) with Drizzle; use `pg` only when library interop or an official Cloudflare path requires it.
+- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `nodemailer`, `winston`, `bunyan`, `pino`, `hono`, `express`.
+- **Version policy**: TanStack Start tracks one major behind current when a previous major exists. Today only `1.x` has ever shipped, so pin the latest `1.x`.
+- Vitest is the test runner, always through `@cloudflare/vitest-pool-workers` so tests get real bindings. Not `bun test`, not `jest`.
+
+### Deliberately unconfigured
+
+No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. Nothing in this skill depends on them, so adding them later is additive. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions running `bunx tsc --noEmit` + `bunx vitest run` + `bunx wrangler deploy`.
+
+### Add only when the need is real
+
+Everything below is **not** in the default stack. Add one when the listed condition is actually hit, not in anticipation.
+
+| Need                                                       | Add                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| Relational workload D1 can't hold (>10 GB, Postgres-only SQL) | PostgreSQL via Hyperdrive + `postgres` driver + `drizzle-orm/postgres-js` |
+| Marketing email, templates, campaign analytics             | Resend + React Email (transactional stays on the binding) |
+| Error alerting / release tracking beyond Workers Logs      | `@sentry/cloudflare` + `@sentry/tanstackstart-react`   |
+| Standalone API with many middleware layers or OpenAPI      | Hono, mounted at `src/routes/api/$.ts`                 |
+| Strong consistency, atomic counters, realtime coordination | Durable Object                                         |
+| Rate limits on non-auth routes                             | Cloudflare `ratelimits` binding                        |
+| User uploads / large media                                 | R2 binding — serve via a route handler, no S3 SDK       |
+| Long-running or multi-step background jobs                 | Cloudflare Queues / Workflows                          |
+| Second language                                            | i18n lib of choice — do not hand-roll                  |
 
 ## Architecture
 
 ```
-                      Build time                          Request time
-                      ──────────                          ────────────
+                      Build time                     Request time
+                      ──────────                     ────────────
 
-  Routes (SSG)  ──► prerender ──► flat HTML ───────────►  Cloudflare CDN  ──►  Browser
-  (vite plugin prerender)                                  (no server run)
+  Routes (SSG)  ──► prerender ──► HTML ──────────►  Cloudflare CDN  ──►  Browser
+                                                     (no Worker run)
 
-  Routes (SSR)  ──────────────────────────────────────►  Cloudflare Workers
-  (default)                                                     │
-                                                          React server render
-                                                                │
-                                                          stream HTML  ────────►  Browser
-                                                                ▲
-                                                                │  secrets = Worker bindings (c.env)
-                                                                │
-  Component ──► createServerFn stub ──typed fetch POST──►  Worker endpoint
-  (co-located, same file)                                       │
-                                                          server fn / Hono handler
-                                                                │
-                                                                ▼
-                                                          Drizzle ──► Hyperdrive ──► PostgreSQL
-                                                          Better Auth               (self-hosted)
+  Routes (SSR)  ─────────────────────────────────►  Cloudflare Worker
+  (default)                                               │
+                                                    React server render
+                                                          │
+                                                    stream HTML  ────────►  Browser
+                                                          ▲
+  Component ──► createServerFn stub ──typed POST──►       │
+  (co-located, same file)                                 │
+                                                    ┌─────┴─────┬──────┐
+                                                    ▼           ▼      ▼
+                                                 D1 (DB)      KV    EMAIL
+                                                    ▲
+                                              Drizzle / Better Auth
 ```
 
 - CRUD → **server functions** co-located with components.
-- Middleware, OpenAPI, RPC, external API surface → **Hono** at `/api/*`.
-- **Better Auth** plugs into Hono as handler, Drizzle as schema.
-- One **Zod schema** per concept in `src/schemas/`, shared by Hono / Form / Drizzle.
-- Secrets come from **Worker bindings** (`c.env`), never `process.env` (empty on Workers unless `nodejs_compat`). Public values use the `VITE_` prefix.
-- Bindings (Hyperdrive, KV, secrets) exist only at **request time** — build the DB client and Better Auth per request, never at module top level. KV is for session/cache acceleration and approximate rate-limit state; anything needing immediate revocation, atomic counters, or strong consistency stays in Postgres or a Durable Object.
+- Webhooks, files, anything non-React → **route `server.handlers`** (`src/routes/api/*.ts`).
+- **Better Auth** mounts as a route handler and uses Drizzle over D1.
+- One **Zod schema** per concept in `src/schemas/`, shared by server fn / Form / validation.
+- Secrets come from **Worker bindings**, never `process.env`. Public values use the `VITE_` prefix.
 
 ### Rendering strategy
 
-TanStack Start supports per-route rendering:
+| Route type                              | Mode         | How                                                                 |
+| --------------------------------------- | ------------ | ------------------------------------------------------------------- |
+| Data-independent (landing, blog, about) | Static (SSG) | `tanstackStart({ prerender: { enabled: true } })` in `vite.config.ts` |
+| Per-request data (dashboard, account)   | Server (SSR) | default                                                             |
+| Purely client-rendered                  | CSR          | `ssr: false` route option in `createFileRoute(...)({ ... })`        |
 
-| Route type | Mode | How |
-|---|---|---|
-| Data-independent (landing, blog, about) | Static (SSG) | `tanstackStart({ prerender: { enabled: true } })` in `vite.config.ts` (per-page via `pages`); needs `@tanstack/react-start` ≥ 1.138 |
-| Per-request data (dashboard, account) | Server (SSR) | default |
-| Purely client-rendered (SPA fallback) | CSR | `ssr: false` route option in `createFileRoute(...)({ ... })` |
-
-Prerendered routes serve flat HTML from the Cloudflare CDN with no Worker invocation. Server functions can also be cached at build time — see [TanStack docs on Static Server Functions](https://tanstack.com/start/latest/docs/framework/react/guide/static-server-functions).
+Prerendered routes serve flat HTML from the CDN with no Worker invocation — use them for everything that doesn't read per-user data.
 
 ## Project structure
 
@@ -97,27 +110,21 @@ src/
 ├── routes/
 │   ├── __root.tsx
 │   ├── index.tsx
-│   └── api/$.ts                  # catch-all → Hono
-├── server/
-│   ├── hono.ts                   # Hono app + sub-routers
-│   ├── routers/                  # posts.ts, users.ts, ...
-│   └── middleware/
+│   └── api/auth/$.ts             # Better Auth handler
 ├── db/
-│   ├── index.ts                  # Drizzle client factory (from Hyperdrive binding)
+│   ├── index.ts                  # Drizzle client (from D1 binding)
 │   ├── schema.ts                 # business tables
 │   └── auth-schema.ts            # Better Auth (CLI-generated, do not edit)
 ├── lib/
 │   ├── auth.ts, auth-client.ts
-│   ├── email.ts                  # Resend wrapper
-│   └── logger.ts                 # pino
-├── emails/                       # React Email templates
+│   └── email.ts                  # send_email binding wrapper
 ├── schemas/                      # shared Zod schemas
 ├── components/{ui,forms}/
 ├── styles/app.css                # @import "tailwindcss"
+├── start.ts                      # global request middleware (security headers)
 └── router.tsx
-drizzle/                          # generated migrations
-.github/workflows/ci.yml
-biome.json, drizzle.config.ts, lefthook.yml, vite.config.ts, wrangler.toml
+drizzle/                          # generated migrations (= wrangler migrations_dir)
+drizzle.config.ts, vite.config.ts, vitest.config.ts, wrangler.toml
 ```
 
 ## Setup
@@ -126,129 +133,158 @@ biome.json, drizzle.config.ts, lefthook.yml, vite.config.ts, wrangler.toml
 bun create tsrouter-app@latest my-app && cd my-app
 
 # Runtime
-bun add hono drizzle-orm postgres better-auth zod @tanstack/react-form
-bun add resend react-email @react-email/components
-bun add pino hono-pino
-bun add @sentry/cloudflare @sentry/tanstackstart-react
-bun add tailwindcss @tailwindcss/vite
+bun add drizzle-orm better-auth zod @tanstack/react-form tailwindcss @tailwindcss/vite
 
 # Dev
-bun add -d drizzle-kit @biomejs/biome lefthook wrangler @cloudflare/workers-types
-bun add -d @cloudflare/vite-plugin @vitejs/plugin-react
+bun add -d drizzle-kit wrangler @cloudflare/vite-plugin @vitejs/plugin-react
+bun add -d vitest @cloudflare/vitest-pool-workers
 
 # Init
 bunx shadcn@latest init
-bunx biome init
-bunx lefthook install
+
+# Cloudflare resources — each command prints an id for wrangler.toml
+bunx wrangler d1 create my-app
+bunx wrangler kv namespace create KV
+bunx wrangler email sending enable example.com   # onboard the sending domain
 
 # After writing src/lib/auth.ts
 bunx @better-auth/cli generate --output src/db/auth-schema.ts
 
-# Migrations connect directly to Postgres (DATABASE_URL), NOT through Hyperdrive
-bunx drizzle-kit generate && bunx drizzle-kit migrate
+# Migrations: generate SQL with Drizzle, apply with wrangler
+bunx drizzle-kit generate
+bunx wrangler d1 migrations apply my-app --local     # dev
+bunx wrangler d1 migrations apply my-app --remote    # prod
 
-# Provision Hyperdrive over your self-hosted Postgres (returns an id for wrangler.toml)
-bunx wrangler hyperdrive create my-app-db --connection-string="postgres://user:pass@host:5432/db"
-
-# KV namespace for sessions + edge cache (returns an id for wrangler.toml)
-bunx wrangler kv namespace create KV
+# Regenerate the Env type after every wrangler.toml edit
+bunx wrangler types
 ```
 
 ## Integration patterns
 
-### Mount Hono inside Start
+### Drizzle over D1
 
-`src/routes/api/$.ts`:
-
-```ts
-import { createFileRoute } from '@tanstack/react-router'
-import { env } from 'cloudflare:workers'
-import { app } from '~/server/hono'
-
-// Pass the Workers env as the second arg so Hono handlers get `c.env` (bindings, secrets)
-const handler = ({ request }: { request: Request }) => app.fetch(request, env)
-
-export const Route = createFileRoute('/api/$')({
-  server: {
-    handlers: { GET: handler, POST: handler, PUT: handler, DELETE: handler, PATCH: handler },
-  },
-})
-```
-
-`src/server/hono.ts` — see *Security middleware* for the production version that wires CORS, secure headers, and rate limiting.
-
-### Drizzle over Hyperdrive
-
-Bindings aren't available at module load on Workers — build the client per request from the Hyperdrive binding's connection string. A factory keeps one code path for Bun (dev) and Workers (prod).
+D1 is a binding, not a connection string — no pool, no driver, no `DATABASE_URL`. Read the binding inside the request.
 
 ```ts
 // src/db/index.ts
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { drizzle } from 'drizzle-orm/d1'
+import { env } from 'cloudflare:workers'
 import * as schema from './schema'
 import * as authSchema from './auth-schema'
 
-// connStr: env.HYPERDRIVE.connectionString on Workers, process.env.DATABASE_URL in dev
-export function createDb(connStr: string) {
-  const client = postgres(connStr, { prepare: false, max: 5 })
-  return drizzle(client, { schema: { ...schema, ...authSchema } })
-}
-export type DB = ReturnType<typeof createDb>
+// Call inside a handler. Bindings are request-scoped — never at module top level.
+export const getDb = () => drizzle(env.DB, { schema: { ...schema, ...authSchema } })
+export type DB = ReturnType<typeof getDb>
 ```
 
 ```ts
-// drizzle.config.ts — migrations connect DIRECTLY to Postgres, never through Hyperdrive
+// src/db/schema.ts — SQLite tables, not pg
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+
+export const posts = sqliteTable('posts', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+```
+
+```ts
+// drizzle.config.ts
 import { defineConfig } from 'drizzle-kit'
 
 export default defineConfig({
   schema: ['./src/db/schema.ts', './src/db/auth-schema.ts'],
   out: './drizzle',
-  dialect: 'postgresql',
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  dialect: 'sqlite',
+  // `generate` only emits SQL — no connection needed.
+  // drizzle-kit studio against remote D1 additionally needs driver: 'd1-http' + dbCredentials.
 })
 ```
 
-Workflow: `bunx drizzle-kit generate` → `migrate`; `studio` for GUI.
+Workflow: `drizzle-kit generate` writes SQL into `drizzle/`; `wrangler d1 migrations apply` runs it. Point `migrations_dir` at `drizzle` so the two agree. Never `drizzle-kit migrate` — it has no D1 binding.
 
-For routes that make several DB round trips per request, consider Smart Placement so the Worker can run closer to the database. Do not enable it blindly on asset-heavy or mostly-static Workers; split a DB-heavy backend Worker behind a service binding if frontend latency starts to suffer.
+#### If you outgrow D1 and switch to Postgres
+
+Postgres on Workers **must** go through Hyperdrive — an isolate can't hold a long-lived TCP connection across requests, and Hyperdrive pools them at the edge. Four things change together:
+
+```ts
+// src/db/index.ts
+import { drizzle } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
+import { env } from 'cloudflare:workers'
+import * as schema from './schema'
+
+export const getDb = () =>
+  drizzle(postgres(env.HYPERDRIVE.connectionString, { prepare: false, max: 5 }), { schema })
+```
+
+1. `bunx wrangler hyperdrive create my-app-db --connection-string="postgres://..."`, then a `[[hyperdrive]]` block in `wrangler.toml` (drop `[[d1_databases]]`).
+2. Schema moves from `drizzle-orm/sqlite-core` to `pg-core`; Better Auth adapter goes `provider: 'sqlite'` → `'pg'`.
+3. Keep `nodejs_compat` — postgres.js needs the Node `net` polyfill.
+4. Migrations connect **directly** to Postgres via `DATABASE_URL` (`drizzle-kit migrate`), not through Hyperdrive and not via `wrangler d1 migrations apply`. Hyperdrive is not a migration endpoint.
+
+For routes with several DB round trips, consider Smart Placement so the Worker runs closer to the database — but not on asset-heavy Workers.
 
 ### Better Auth
 
-Better Auth needs the DB, and both are request-scoped on Workers — wrap them in a factory.
+Better Auth needs the DB, so it is request-scoped too.
 
 ```ts
 // src/lib/auth.ts
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import type { DB } from '~/db'
+import { tanstackStartCookies } from 'better-auth/tanstack-start'
+import { env } from 'cloudflare:workers'
+import { getDb } from '~/db'
 import { sendEmail } from '~/lib/email'
-import { ResetPasswordEmail, VerifyEmail } from '~/emails'
 
-// env is the Workers bindings object (`c.env`) — pass it straight through
-export function createAuth(db: DB, env: Env) {
+export function getAuth() {
   return betterAuth({
-    database: drizzleAdapter(db, { provider: 'pg' }),
-    // KV is secondary storage for session/cache acceleration and approximate rate-limit state.
-    // Keep strong-consistency decisions in Postgres or a Durable Object.
+    database: drizzleAdapter(getDb(), { provider: 'sqlite' }),
+    // KV keeps session reads off D1's single-region primary
     secondaryStorage: {
       get: (key) => env.KV.get(key),
       set: (key, value, ttl) => env.KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined),
       delete: (key) => env.KV.delete(key),
+    },
+    // Built-in limiter — do not hand-roll one
+    rateLimit: {
+      enabled: true,
+      storage: 'secondary-storage',
+      customRules: { '/sign-in/email': { window: 60, max: 5 } },
     },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.PUBLIC_ORIGIN,
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      sendResetPassword: async ({ user, url }) =>
-        sendEmail({ to: user.email, subject: 'Reset your password', react: ResetPasswordEmail({ url }) }, env.RESEND_API_KEY, env.EMAIL_FROM),
+      sendResetPassword: ({ user, url }) =>
+        sendEmail(user.email, 'Reset your password', `<a href="${url}">Reset your password</a>`),
     },
     emailVerification: {
-      sendVerificationEmail: async ({ user, url }) =>
-        sendEmail({ to: user.email, subject: 'Verify your email', react: VerifyEmail({ url }) }, env.RESEND_API_KEY, env.EMAIL_FROM),
+      sendVerificationEmail: ({ user, url }) =>
+        sendEmail(user.email, 'Verify your email', `<a href="${url}">Verify your email</a>`),
     },
+    socialProviders: {
+      google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
+      github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
+    },
+    plugins: [tanstackStartCookies()],
   })
 }
+```
+
+```ts
+// src/routes/api/auth/$.ts
+import { createFileRoute } from '@tanstack/react-router'
+import { getAuth } from '~/lib/auth'
+
+const handler = ({ request }: { request: Request }) => getAuth().handler(request)
+
+export const Route = createFileRoute('/api/auth/$')({
+  server: { handlers: { GET: handler, POST: handler } },
+})
 ```
 
 ```ts
@@ -258,114 +294,102 @@ export const authClient = createAuthClient()
 export const { signIn, signOut, signUp, useSession } = authClient
 ```
 
-Read session on the server: `await auth.api.getSession({ headers: request.headers })` (build `auth` per request via `createAuth`). If immediate session revocation matters, keep the canonical session check in Postgres or route revocation through a Durable Object; KV is eventually consistent. Re-run `bunx @better-auth/cli generate` + a new Drizzle migration after every Better Auth upgrade.
+Server-side session, inside a `createServerFn` handler or route `beforeLoad`:
 
-### Email (Resend + React Email)
+```ts
+import { getRequestHeaders } from '@tanstack/react-start/server'
+const session = await getAuth().api.getSession({ headers: getRequestHeaders() })
+```
+
+Providers beyond the built-ins:
+
+- **Phone OTP** → `phoneNumber` plugin from `better-auth/plugins`; supply `sendOTP` (SMS provider is yours).
+- **WeChat** → `genericOAuth` plugin from `better-auth/plugins`; WeChat is not a built-in provider.
+
+Re-run `bunx @better-auth/cli generate` + `bunx drizzle-kit generate` after every Better Auth or plugin change — plugins add tables.
+
+### Email (Cloudflare Email Sending)
+
+No API key, no SDK — the `send_email` binding is the whole integration.
 
 ```ts
 // src/lib/email.ts
-import { Resend } from 'resend'
-import type { ReactElement } from 'react'
+import { env } from 'cloudflare:workers'
 
-export async function sendEmail(opts: { to: string; subject: string; react: ReactElement }, apiKey: string, from: string) {
-  const { error } = await new Resend(apiKey).emails.send({ from, ...opts })
-  if (error) throw new Error(`email send failed: ${error.message}`)
+export async function sendEmail(to: string, subject: string, html: string) {
+  await env.EMAIL.send({
+    to,
+    from: { email: env.EMAIL_FROM, name: env.APP_NAME },
+    subject,
+    html,
+    text: html.replace(/<[^>]+>/g, ' ').trim(), // clients that only show plain text
+  })
 }
 ```
 
-```tsx
-// src/emails/VerifyEmail.tsx
-import { Button, Html, Text } from '@react-email/components'
+The `from` domain must be onboarded first: `bunx wrangler email sending enable example.com`. Transactional only — marketing sends belong on a marketing platform.
 
-export const VerifyEmail = ({ url }: { url: string }) => (
-  <Html>
-    <Text>Confirm your email to finish signing up.</Text>
-    <Button href={url}>Verify email</Button>
-  </Html>
-)
+### R2 (not in the base stack)
+
+Add it when there are actual uploads — `bunx wrangler r2 bucket create my-app`, then:
+
+```toml
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "my-app"
 ```
 
-Bindings: `RESEND_API_KEY`, `EMAIL_FROM` (verified Resend sender), read from `c.env`.
-
-### Logging (pino)
+It's a binding like the rest — serve through a route handler, never add an S3 SDK:
 
 ```ts
-// src/lib/logger.ts
-import pino from 'pino'
+// src/routes/api/files/$key.ts
+import { createFileRoute } from '@tanstack/react-router'
+import { env } from 'cloudflare:workers'
 
-export const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' })
-```
-
-Mount on Hono so every request has `c.var.logger`:
-
-```ts
-import { pinoLogger } from 'hono-pino'
-app.use('*', pinoLogger({ pino: logger }))
-```
-
-Use `c.var.logger.info({ userId }, 'posted')` in handlers. On Workers, view logs with `wrangler tail` or the observability dashboard. No `console.log` in committed code. (`pino-pretty` is a dev-only transport; don't ship it to Workers.)
-
-### Error monitoring (Sentry)
-
-Server: wrap the Worker fetch handler with `@sentry/cloudflare`. Capture in the Hono error handler:
-
-```ts
-import * as Sentry from '@sentry/cloudflare'
-
-app.onError((err, c) => {
-  Sentry.captureException(err)
-  c.var.logger?.error({ err }, 'unhandled')
-  return c.json({ error: 'internal' }, 500)
+export const Route = createFileRoute('/api/files/$key')({
+  server: {
+    handlers: {
+      GET: async ({ params }) => {
+        const obj = await env.R2.get(params.key)
+        if (!obj) return new Response('Not found', { status: 404 })
+        return new Response(obj.body, {
+          headers: { 'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream' },
+        })
+      },
+    },
+  },
 })
 ```
 
-Init reads `SENTRY_DSN` from the Worker env, not an import-order side effect. React side: follow `@sentry/tanstackstart-react` router instrumentation.
+Authorize writes before calling `env.R2.put()`. For large or direct-from-browser uploads, put the bucket behind a custom domain or issue presigned URLs instead of streaming through the Worker.
 
-### Security middleware
+### Security headers
 
-CORS, secure headers, and a rate limit on `/auth/*` are non-negotiable.
+One global middleware, applied to every request including SSR and server functions.
 
 ```ts
-// src/server/hono.ts
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { secureHeaders } from 'hono/secure-headers'
+// src/start.ts
+import { createCsrfMiddleware, createMiddleware, createStart } from '@tanstack/react-start'
+import { getResponseHeaders } from '@tanstack/react-start/server'
 
-export const app = new Hono().basePath('/api')
-
-// KV-backed so counts survive across isolates (approximate — KV is eventually consistent)
-async function rateLimit(kv: KVNamespace, keyPrefix: string, limit = 20, windowSec = 900) {
-  const windowId = Math.floor(Date.now() / 1000 / windowSec)
-  const key = `${keyPrefix}:${windowId}`
-  const n = Number((await kv.get(key)) ?? 0) + 1
-  await kv.put(key, String(n), { expirationTtl: windowSec * 2 })
-  return n <= limit
-}
-
-app.use('*', secureHeaders())
-app.use('*', (c, next) =>
-  cors({ origin: c.env.PUBLIC_ORIGIN, credentials: true })(c, next))
-
-app.use('/auth/*', async (c, next) => {
-  const ip = c.req.header('cf-connecting-ip') ?? 'anon'
-  const kv = c.env.KV
-  if (!(await rateLimit(kv, `rate-limit:${ip}:${c.req.path}`, 20, 900))) {
-    return c.text('Too many requests', 429)
-  }
-  await next()
+const securityHeaders = createMiddleware().server(async ({ next }) => {
+  const result = await next()
+  const headers = getResponseHeaders()
+  headers.set('X-Content-Type-Options', 'nosniff')
+  headers.set('X-Frame-Options', 'DENY')
+  headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  return result
 })
 
-// Build request-scoped db + auth from bindings, then delegate to the handler
-app.on(['GET', 'POST'], '/auth/*', async (c) => {
-  const { createDb } = await import('~/db')
-  const { createAuth } = await import('~/lib/auth')
-  const db = createDb(c.env.HYPERDRIVE.connectionString)
-  const auth = createAuth(db, c.env)
-  return auth.handler(c.req.raw)
-})
+export const startInstance = createStart(() => ({
+  // createCsrfMiddleware is on by default — defining start.ts replaces the
+  // default list, so it must be re-added or server functions lose CSRF protection.
+  requestMiddleware: [createCsrfMiddleware(), securityHeaders],
+}))
 ```
 
-`cf-connecting-ip` is the real client IP on Cloudflare — never `x-forwarded-for`. The KV rate limiter uses a fixed window based on time intervals, which is approximate due to eventual consistency. KV is acceptable for approximate throttles; for hard per-key limits use a Durable Object or Cloudflare's rate limiting binding.
+**No CORS config.** The app and its API are same-origin. Add `cors` only if a different origin genuinely calls the API.
 
 ### TanStack Form + Zod
 
@@ -382,11 +406,11 @@ export type PostInput = z.infer<typeof postInput>
 const form = useForm({
   defaultValues: { title: '', body: '' },
   validators: { onSubmit: postInput },
-  onSubmit: async ({ value }) => { /* server fn or RPC */ },
+  onSubmit: async ({ value }) => createPost({ data: value }),
 })
 ```
 
-Server: parse with the same schema before the DB.
+Server functions parse with the same schema before touching the DB — client validation is UX, not a trust boundary.
 
 ## Configuration
 
@@ -394,14 +418,13 @@ Server: parse with the same schema before the DB.
 
 ```ts
 // vite.config.ts
-import { defineConfig } from 'vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import viteReact from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // cloudflare() builds the Worker; assign it the framework's `ssr` environment
   plugins: [
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
     tanstackStart(),
@@ -423,164 +446,129 @@ export default defineConfig({
 
 No `tailwind.config.js` — tokens live in `@theme`. shadcn/ui must use its v4 mode.
 
-### Biome
-
-```json
-{
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
-  "files": { "ignoreUnknown": true, "includes": ["**", "!**/drizzle/**", "!**/.output/**", "!**/node_modules/**"] },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "linter": { "enabled": true, "rules": { "recommended": true } },
-  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } }
-}
-```
-
-`bunx biome check --write` locally, `bunx biome ci` in CI.
-
-### TypeScript
-
-`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`, and `"types": ["@cloudflare/workers-types"]` so `KVNamespace` / `Hyperdrive` binding types resolve.
-
-### Environment variables
-
-| Scope | Convention | Access |
-|---|---|---|
-| Public (client-safe) | `VITE_` prefix | `import.meta.env.VITE_FOO` |
-| Server secrets | Worker binding | `c.env.FOO` (Hono) / request context (server fn) |
-
-Secrets (`BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `SENTRY_DSN`) are Worker secrets — `wrangler secret put NAME`, never in `wrangler.toml` or the client bundle. `process.env` is empty on Workers unless `nodejs_compat` is on; prefer bindings. The build strips non-`VITE_` variables from client bundles automatically.
-
-The `Env` type (binding + secret names) is generated by `bunx wrangler types` (add a `cf-typegen` script) — re-run it after editing `wrangler.toml`.
-
-### lefthook
-
-```yaml
-# lefthook.yml
-pre-commit:
-  parallel: true
-  commands:
-    biome:
-      glob: '*.{ts,tsx,js,jsx,json,jsonc}'
-      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
-      stage_fixed: true
-```
-
-`bunx lefthook install` once per clone.
-
-### GitHub Actions
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on: { pull_request: {}, push: { branches: [main] } }
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bunx biome ci
-      - run: bunx tsc --noEmit
-      - run: bun test
-  deploy:
-    needs: check
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run build          # produce the Worker output before deploy
-      - run: bunx wrangler deploy
-        env: { CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }} }
-```
-
-Run `bunx drizzle-kit migrate` (against `DATABASE_URL`, direct to Postgres) as a pre-deploy step.
-
-### For AI tooling
-
-Conventions that help AI models generate correct, server-safe code.
-
-**File naming** (TanStack official):
-- `*.functions.ts` — `createServerFn` wrappers, safe to import anywhere
-- `*.server.ts` — server-only code (DB queries, secret reads), only imported inside server function handlers
-- `*.ts` (no suffix) — client-safe code (types, schemas, constants)
-
-**Import boundaries**:
-- `@tanstack/react-start/server-only` — marks a module as server-only; importing it in client code triggers a build error
-
-**Co-location**:
-- Place server functions next to the component that uses them
-- Don't group by layer (controllers/, services/) — group by feature
-
-**Rules for AI**:
-- Use `createServerFn`, never `"use server"` directives (Next.js pattern)
-- Use TanStack Router, not React Router
-- Read secrets from Worker bindings (`c.env`), public values from `import.meta.env.VITE_X`
-- Build DB client and Better Auth per request from bindings — never module-level singletons
-- Loaders handle data fetching; never use `getServerSideProps` or `getStaticProps`
-- TanStack's built-in CSRF middleware (`createCsrfMiddleware`) protects server functions by default; add it explicitly if you define `src/start.ts`
-
-## Testing
-
-```ts
-import { describe, expect, test } from 'bun:test'
-test('adds', () => { expect(1 + 1).toBe(2) })
-```
-
-`bun test`, `--watch`, `--coverage`. DB tests: real Postgres in Docker on a test port, reset between suites, never mock the ORM. `bun test` runs under Bun locally — keep runtime code Web-standard so it behaves the same on Workers. For Workers-only behavior (bindings, `ctx.waitUntil`, Durable Objects, Hyperdrive local bindings), allow the official Cloudflare Vitest pool in a separate integration-test setup.
-
-## Deployment: Cloudflare Workers
-
-`wrangler deploy` builds from source and ships to Workers. Self-hosted Postgres is reached through **Hyperdrive** (connection pooler + query cache) — Workers can't reuse long-lived TCP across requests, and Hyperdrive pools them at the edge.
+### wrangler.toml
 
 ```toml
-# wrangler.toml
 name = "my-app"
 main = "@tanstack/react-start/server-entry"   # @cloudflare/vite-plugin resolves the built Worker
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
 
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "<id from `wrangler hyperdrive create`>"
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "my-app"
+database_id = "<id from `wrangler d1 create`>"
+migrations_dir = "drizzle"
 
 [[kv_namespaces]]
 binding = "KV"
 id = "<id from `wrangler kv namespace create`>"
 
+[[send_email]]
+name = "EMAIL"
+
 [vars]
 PUBLIC_ORIGIN = "https://my-app.example.com"
-# Secrets (never here): wrangler secret put BETTER_AUTH_SECRET / RESEND_API_KEY / SENTRY_DSN
+EMAIL_FROM = "hello@example.com"
+APP_NAME = "My App"
+# Secrets (never here): wrangler secret put BETTER_AUTH_SECRET / GOOGLE_CLIENT_SECRET / ...
 ```
 
-Setup:
+`nodejs_compat` is for Better Auth and React SSR internals, not a database driver.
 
-1. Provision Hyperdrive over your Postgres: `bunx wrangler hyperdrive create my-app-db --connection-string="..."`; put the id in `wrangler.toml`.
-2. Add `@cloudflare/vite-plugin` to `vite.config.ts` (see *Vite + Tailwind v4*); run `bunx wrangler types` for the `Env` type.
-3. Secrets: `wrangler secret put BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `RESEND_API_KEY`, `SENTRY_DSN`.
-4. `bunx drizzle-kit migrate` against `DATABASE_URL` (direct to Postgres, not Hyperdrive).
-5. `bunx wrangler deploy` (or push to `main` — see CI). Add a custom domain in the Cloudflare dashboard.
+### Environment variables
+
+| Scope                | Convention     | Access                                        |
+| -------------------- | -------------- | --------------------------------------------- |
+| Public (client-safe) | `VITE_` prefix | `import.meta.env.VITE_FOO`                    |
+| Server secrets       | Worker binding | `env.FOO` from `cloudflare:workers`           |
+
+Secrets go in with `wrangler secret put NAME`. `process.env` is empty on Workers — read from the binding. The build strips non-`VITE_` variables from client bundles. `bunx wrangler types` regenerates the `Env` type.
+
+### TypeScript
+
+`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Binding types come from the generated `worker-configuration.d.ts` (`bunx wrangler types`) — do not hand-write `Env`.
+
+### Deploy
+
+No CI pipeline — deploy is a two-step manual sequence from a clean checkout:
+
+```bash
+bunx wrangler d1 migrations apply my-app --remote
+bunx wrangler deploy
+```
+
+Before deploying, run the checks CI would have run: `bunx tsc --noEmit` and `bunx vitest run`.
+
+## For AI tooling
+
+**File naming** (TanStack official):
+
+- `*.functions.ts` — `createServerFn` wrappers, safe to import anywhere
+- `*.server.ts` — server-only code (DB queries, secret reads)
+- `*.ts` (no suffix) — client-safe code (types, schemas, constants)
+
+`@tanstack/react-start/server-only` marks a module server-only; importing it from the client is a build error.
+
+**Rules**:
+
+- Use `createServerFn`, never `"use server"` directives (Next.js pattern).
+- Use TanStack Router, not React Router. Loaders fetch data — never `getServerSideProps` / `getStaticProps`.
+- Place server functions next to the component that uses them. Group by feature, not by layer.
+- Reach for a binding before a package: D1 before an external DB, R2 before an S3 SDK, `send_email` before a mail SDK, `ratelimits` before a hand-rolled limiter.
+
+## Testing
+
+Vitest through `@cloudflare/vitest-pool-workers` — one runner for everything, and tests get real D1/KV bindings instead of mocks.
+
+```ts
+// vitest.config.ts
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
+
+export default defineWorkersConfig({
+  test: {
+    poolOptions: {
+      workers: {
+        wrangler: { configPath: './wrangler.toml' },
+        miniflare: { compatibilityFlags: ['nodejs_compat'] },
+      },
+    },
+  },
+})
+```
+
+```ts
+// src/db/posts.test.ts
+import { env } from 'cloudflare:test'
+import { expect, test } from 'vitest'
+import { drizzle } from 'drizzle-orm/d1'
+import { posts } from './schema'
+
+test('inserts a post', async () => {
+  const db = drizzle(env.DB, { schema: { posts } })
+  await db.insert(posts).values({ id: '1', title: 't', body: 'b', createdAt: new Date() })
+  expect(await db.select().from(posts)).toHaveLength(1)
+})
+```
+
+`bunx vitest` (watch) / `bunx vitest run` (once) / `--coverage`. Apply migrations to the local D1 first (`wrangler d1 migrations apply my-app --local`). Never mock the ORM — the pool gives you a real local D1.
+
+Add `@cloudflare/vitest-pool-workers` to `tsconfig.json` `types` so `cloudflare:test` resolves.
 
 ## Gotchas
 
-- **Bindings are request-time only** — build the DB client and Better Auth inside the handler from `c.env`, never at module top level. Module-level `postgres(...)` calls have no binding and break on Workers.
-- **`nodejs_compat` is required** for `postgres.js` (it needs the Node `net` polyfill). Set `compatibility_flags = ["nodejs_compat"]`.
-- **Hyperdrive vs migrations**: runtime reads the connection string from `env.HYPERDRIVE.connectionString`; `drizzle-kit` migrations connect to `DATABASE_URL` directly (Hyperdrive isn't a migration endpoint).
-- **Smart Placement**: consider it for DB-heavy routes with multiple backend round trips; avoid it for static/asset-heavy Workers unless you split backend logic into a separate Worker.
-- **`process.env` is empty on Workers** unless `nodejs_compat` — read config from `c.env` / bindings.
-- **No Lambda-style cold start**: V8 isolates start in ms. But there's **no persistent state between requests** — don't cache a DB pool at module scope expecting reuse.
-- **CPU time limit**: 30s default on paid (configurable up to 5 min); wall-clock for I/O is not counted. Free tier is tightly limited.
-- **Rate-limit key**: on Cloudflare use `cf-connecting-ip`, never `x-forwarded-for`. In-memory limits don't span isolates; KV is only approximate. For exact per-key counts use a Durable Object or Cloudflare's rate limiting binding.
-- **KV is eventually consistent** and read-cached (~60s): useful for session/cache acceleration and approximate throttles, wrong for immediate global revocation, read-after-write, or atomic counters — use Postgres or a Durable Object there.
-- **Tailwind v4** has no JS config — tokens in CSS `@theme`. Use v4-compatible shadcn only.
-- **Postgres driver**: default to `postgres-js` with `drizzle-orm/postgres-js`; allow `pg` only when a dependency or official Cloudflare integration makes it the safer path.
-- **Hono mount**: catch-all must be `src/routes/api/$.ts`. Don't share paths with server functions — silent 404s.
-- **Better Auth tables** are generated; never hand-edit `src/db/auth-schema.ts`. Regenerate + new migration after upgrades.
-- **Better Auth on Workers** hashes via Web Crypto (scrypt) — no `bcrypt`/`argon2`, which don't run on Workers anyway.
-- **Sentry on Workers**: use `@sentry/cloudflare` (handler wrapper + `captureException`), not `@sentry/bun`. Client side is `@sentry/tanstackstart-react`.
-- **Resend sender**: `EMAIL_FROM` must be on a verified domain — Better Auth flows fail silently otherwise; check the Resend dashboard.
-- **Biome doesn't sort Tailwind classes**. Accept the order or add `prettier-plugin-tailwindcss` for that one concern.
+- **Bindings are request-time** — call `getDb()` / `getAuth()` inside the handler. Module-level binding I/O throws on Workers.
+- **D1 is SQLite**: no `jsonb`, no `uuid` type, no `RETURNING` on every statement, integer timestamps. Use `drizzle-orm/sqlite-core`, not `pg-core`.
+- **D1 limits**: 10 GB per database, 1 MB per query result, single-region primary. Cross-region reads are slow — that's why sessions sit in KV. Past those limits, switch to Hyperdrive + Postgres.
+- **KV is eventually consistent** and read-cached (~60s): fine for session acceleration, wrong for immediate global revocation or atomic counters — use D1 or a Durable Object there.
+- **Rate limiting**: Better Auth's built-in limiter covers auth routes. For others use the `ratelimits` binding (`period` is 10 or 60 seconds only, and counts are per-colo, not global).
+- **Email domain must be onboarded** (`wrangler email sending enable`) before the first send, or Better Auth's verification flow fails silently. Always send `text` alongside `html`.
+- **No persistent state between requests**: V8 isolates start in ms but share nothing reliable. Never cache per-user state at module scope.
+- **CPU time limit**: 30s default on paid (configurable up to 5 min); I/O wall-clock is not counted.
+- **Better Auth on Workers** hashes via Web Crypto (scrypt) — `bcrypt` / `argon2` don't run on Workers anyway.
 - **Bun lockfile** is `bun.lock` (text). Commit it.
-- **`console.log` is banned** in committed code — use `c.var.logger`. Inspect Workers logs with `wrangler tail`.
+- **Logging is `console`** with an object payload (`console.log({ userId }, 'posted')`), captured by Workers Logs when `observability.enabled` is on. Inspect live with `wrangler tail`, or query in the Workers Observability dashboard. No log library.
+- **`@cloudflare/vitest-pool-workers` pins its Vitest major** (peer `vitest ^4.1`). Bump the two together, or the pool refuses to load.

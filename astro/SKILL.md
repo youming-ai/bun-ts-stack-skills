@@ -1,88 +1,95 @@
 ---
 name: astro
-description: Full-stack TypeScript conventions for content-driven sites built on Bun + Astro, deployed to Cloudflare Workers. Canonical stack — Bun (dev tooling), Astro 5, Content Collections, MDX, React islands, Astro Actions, Drizzle + self-hosted PostgreSQL via Cloudflare Hyperdrive (optional), Better Auth + Cloudflare KV (optional), Tailwind v4, shadcn/ui, Zod, Resend, pino, Sentry, lefthook, GitHub Actions, Biome, bun test, wrangler. Use whenever the user is scaffolding, writing, configuring, or deploying a content-driven site mentioning ANY of these — including "blog", "docs site", "marketing site", "landing page", "portfolio", "content collection", "MDX", "Astro action", "RSS feed", "sitemap", "send emails", "add logging", "CI pipeline", "deploy to Cloudflare", "Workers", "Hyperdrive", or Astro in a Bun + TS context. Trigger even when only one technology is mentioned. This is the content-site counterpart to `tanstack`, which covers app-driven projects.
+description: All-in-Cloudflare TypeScript conventions for content-driven sites on Bun + Astro, deployed to Cloudflare Workers. Canonical stack — Bun (dev tooling), Astro 6, Content Collections, MDX, React islands, Astro Actions, Drizzle + Cloudflare D1 (optional), R2, KV, Better Auth (optional), Cloudflare Email Sending, Tailwind v4, shadcn/ui, Zod, Pagefind, Vitest, wrangler. Use whenever the user is scaffolding, writing, configuring, or deploying a content-driven site mentioning ANY of these — including "blog", "docs site", "marketing site", "landing page", "portfolio", "content collection", "MDX", "Astro action", "RSS feed", "sitemap", "send emails", "CI pipeline", "deploy to Cloudflare", "Workers", "D1", "R2", or Astro in a Bun + TS context. Trigger even when only one technology is mentioned. Scope is content-driven sites — pages, articles, SEO — including the light dynamic parts (comments, likes, signups) that Astro Actions cover.
 ---
 
-# Astro Bun Stack
+# Astro on Cloudflare
 
-Conventions for content-driven sites (blogs, docs, marketing, portfolios) on Bun + Astro, deployed to Cloudflare Workers. Counterpart to `tanstack` — pick this when SEO and pages matter; pick `tanstack` when state and login matter. Both deploy the same way: Cloudflare Workers + KV + Hyperdrive.
+Conventions for content-driven sites (blogs, docs, marketing, portfolios) on Bun + Astro, running entirely on Cloudflare. Use it when SEO and pages are the deliverable. Source of truth for stack choices, layout, integrations, and deploy. Deviate only with explicit reason.
+
+**Everything is a Cloudflare binding.** One Worker, one `wrangler deploy`.
 
 ## Stack
 
-| Layer          | Choice                                                        |
-| -------------- | ------------------------------------------------------------- |
-| Dev runtime    | Bun (package manager, test, scripts)                          |
-| Prod runtime   | Cloudflare Workers for SSR/Actions; static assets for pure-static sites |
-| Language       | TypeScript (strict)                                           |
-| Framework      | Astro 5 (LTS)                                                 |
-| Content        | Content Collections (`glob()` loader) + MDX                   |
-| Server         | Astro Actions (typed, Zod-validated)                          |
-| Interactive    | React islands (`@astrojs/react`) — only when needed           |
-| ORM            | Drizzle + Drizzle Kit (optional)                              |
-| Database       | Self-hosted PostgreSQL via Cloudflare Hyperdrive (optional)   |
-| KV             | Cloudflare KV — session/cache acceleration, approximate rate-limit (optional) |
-| Auth           | Better Auth (optional)                                        |
-| CSS            | Tailwind v4 (`@tailwindcss/vite`)                             |
-| UI             | shadcn/ui (React islands) + lucide-react                      |
-| Validation     | Zod                                                           |
-| SEO            | `@astrojs/sitemap` + `@astrojs/rss` + `<SEO>` component       |
-| Search         | Pagefind (static, build-time index)                           |
-| Email          | Resend + React Email (only if site sends mail)                |
-| Logging        | pino (in `src/middleware.ts`)                                 |
-| Monitoring     | Sentry (`@sentry/astro`)                                      |
-| Security       | Astro middleware: security headers + approximate KV rate limit |
-| Lint/Format    | Biome                                                         |
-| Git hooks      | lefthook                                                      |
-| Test           | `bun test`                                                    |
-| CI/CD          | GitHub Actions + `wrangler deploy`                            |
-| Deploy         | Cloudflare Workers                                            |
+| Layer        | Choice                                                                  |
+| ------------ | ----------------------------------------------------------------------- |
+| Dev runtime  | Bun (package manager, scripts)                                          |
+| Prod runtime | Cloudflare Workers for SSR/Actions; static assets for pure-static sites |
+| Language     | TypeScript (strict)                                                     |
+| Framework    | Astro 6 (one major behind current)                                       |
+| Content      | Content Collections (`glob()` loader) + MDX                             |
+| Server       | Astro Actions (typed, Zod-validated)                                    |
+| Interactive  | React islands (`@astrojs/react`) — only when needed                     |
+| ORM          | Drizzle + Drizzle Kit (optional)                                        |
+| Database     | Cloudflare D1 (optional)                                                |
+| KV           | Cloudflare KV — session cache, auth rate limits (optional)              |
+| Auth         | Better Auth (optional)                                                  |
+| Email        | Cloudflare Email Sending (`send_email` binding)                         |
+| CSS          | Tailwind v4 (`@tailwindcss/vite`)                                       |
+| UI           | shadcn/ui (React islands) + lucide-react                                |
+| Validation   | Zod                                                                     |
+| SEO          | `@astrojs/sitemap` + `@astrojs/rss` + `<SEO>` component                 |
+| Search       | Pagefind (static, build-time index)                                     |
+| Logs         | Workers Observability (`console` + Workers Logs)                        |
+| Test         | Vitest + `@cloudflare/vitest-pool-workers`                              |
+| Deploy       | `bunx wrangler deploy`                                                  |
 
 ### Non-negotiables
 
-- Bun is the dev runtime: package manager, test runner, script runner. Never `npm` / `pnpm` / `yarn` / `node`.
-- SSR pages, Actions, and middleware run on **Cloudflare Workers** via `@astrojs/cloudflare`. Server code must be Workers-compatible: Web-standard APIs, no Node built-ins unless `nodejs_compat`. Pure-static sites can skip the adapter and deploy static assets.
+- Bun is the dev runtime: package manager and script runner. Never `npm` / `pnpm` / `yarn` / `node`. (Tests run in workerd via Vitest, not in Bun.)
+- SSR pages, Actions, and middleware run on **Cloudflare Workers** via `@astrojs/cloudflare`. Web-standard APIs only. Pure-static sites skip the adapter and deploy assets.
 - **Zero JS by default**: Astro renders static HTML; interactive bits are explicit islands with `client:*`. If `.astro` can do it, don't reach for React.
+- **Bindings are request-time** — read them from `locals.runtime.env`, never module scope.
 - TypeScript `strict: true`.
-- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `eslint`, `prettier`, `nodemailer`, `husky`, `pre-commit`, `winston`, `bunyan`, `@astrojs/tailwind` (deprecated), `@astrojs/node`.
-- Default to `bun test`; use `vitest` only for Cloudflare Workers integration tests that need the real Workers runtime or bindings. Default to `postgres` (postgres.js) with Drizzle; use `pg` only when library interop or an official Cloudflare path requires it.
+- Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `nodemailer`, `winston`, `bunyan`, `pino`, `@astrojs/tailwind` (deprecated), `@astrojs/node`.
+- **Version policy**: stay one major behind current Astro. Current is 7.x, so pin `astro@^6` with `@astrojs/cloudflare@^13` (its peer range is `astro ^6.3`). Let `bunx astro add` resolve the other integrations — their majors move with Astro's.
+- Vitest is the test runner, always through `@cloudflare/vitest-pool-workers` so tests get real bindings. Not `bun test`, not `jest`.
+
+### Deliberately unconfigured
+
+No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions running `bunx astro check` + `bunx vitest run` + `bunx wrangler deploy`.
 
 ### When to add what
 
-| Need                                      | Add                                            |
-| ----------------------------------------- | ---------------------------------------------- |
-| Pure static blog / docs / marketing       | nothing extra; no Workers adapter required     |
-| Comments, likes, newsletter signup        | `@astrojs/react` + Astro Actions               |
-| Persisted data                            | Drizzle + Postgres via Hyperdrive              |
-| Login / sessions                          | Better Auth + KV                               |
-| Site search                               | Pagefind                                       |
+Nothing below is in the base install. Add one when the condition is actually hit.
+
+| Need                                       | Add                                               |
+| ------------------------------------------ | ------------------------------------------------- |
+| Pure static blog / docs / marketing        | nothing extra; no Workers adapter required        |
+| Comments, likes, newsletter signup         | `@astrojs/react` + Astro Actions                  |
+| Persisted data                             | Drizzle + D1                                      |
+| Login / sessions                           | Better Auth + KV                                  |
+| User uploads / large media                 | R2 binding — serve via a route handler, no S3 SDK |
+| Site search                                | Pagefind                                          |
+| >10 GB of data or Postgres-only SQL        | Hyperdrive + Postgres + `drizzle-orm/postgres-js` |
+| Marketing email, templates, campaigns      | Resend + React Email                              |
+| Error alerting beyond Workers Logs         | `@sentry/astro`                                   |
+| Rate limits outside Better Auth            | Cloudflare `ratelimits` binding                   |
 
 ## Architecture
 
 ```
-                      Build time                          Request time
-                      ──────────                          ────────────
+                      Build time                     Request time
+                      ──────────                     ────────────
 
-  Content Collections ─► prerender ─► static HTML ──────►  Cloudflare CDN  ──►  Browser
-  (default)                                                 (no Worker run)
+  Content Collections ─► prerender ─► HTML ───────►  Cloudflare CDN  ──►  Browser
+  (default)                                            (no Worker run)
 
-  Pages (SSR)  ───────────────────────────────────────►  Cloudflare Workers
-  export const prerender = false                                │
-                                                          @astrojs/cloudflare
-                                                                │
-                                                          stream HTML  ────────►  Browser
-                                                                ▲
-                                                                │  bindings = Astro.locals.runtime.env
-                                                                │
-  Form / island ──► Astro Action ──POST /_actions/*──────►  Worker endpoint
-                                                                │
-                                                          action handler
-                                                                │
-                                                                ▼
-                                                          Drizzle ──► Hyperdrive ──► PostgreSQL
-                                                          Better Auth + KV          (self-hosted)
+  Pages (SSR)  ──────────────────────────────────►  Cloudflare Worker
+  export const prerender = false                          │
+                                                    @astrojs/cloudflare
+                                                          │
+                                                    stream HTML  ────────►  Browser
+                                                          ▲
+  Form / island ──► Astro Action ──POST /_actions/*►      │
+                                                    ┌─────┴─────┬──────┐
+                                                    ▼           ▼      ▼
+                                                 D1 (DB)      KV    EMAIL
+                                                    ▲
+                                              Drizzle / Better Auth
 ```
 
-Most pages **prerender** to static HTML and serve from the CDN with no Worker run. A pure-static site can skip `@astrojs/cloudflare` entirely and deploy the built assets. Routes with `export const prerender = false` run on Workers. Actions always run server-side. Secrets and bindings (Hyperdrive, KV) come from `Astro.locals.runtime.env` at request time — never module scope.
+Most pages **prerender** to static HTML and serve from the CDN with no Worker run. A pure-static site can skip `@astrojs/cloudflare` entirely and deploy the built assets. Routes with `export const prerender = false` run on Workers. Actions always run server-side. Bindings come from `locals.runtime.env` at request time — never module scope.
 
 ## Project structure
 
@@ -94,32 +101,30 @@ src/
 │   ├── rss.xml.ts
 │   └── 404.astro
 ├── content/{blog,docs}/         # Content Collections sources
-├── content.config.ts            # collections + Zod schemas (Astro 5+)
+├── content.config.ts            # collections + Zod schemas
 ├── actions/index.ts             # Astro Actions
-├── middleware.ts                # security headers + pino + KV rate limit
+├── middleware.ts                # security headers
 ├── layouts/                     # BaseLayout, PostLayout, ...
 ├── components/
 │   ├── *.astro                  # default — no JS
 │   ├── ui/                      # shadcn/ui (React islands)
 │   └── react/                   # custom React islands
 ├── lib/
-│   ├── db.ts                    # Drizzle client factory (if DB)
-│   ├── auth.ts                  # Better Auth factory (if auth)
-│   ├── email.ts                 # Resend (if mail)
-│   └── logger.ts                # pino
-├── emails/                      # React Email templates
+│   ├── db.ts                    # Drizzle client (if DB)
+│   ├── auth.ts                  # Better Auth (if auth)
+│   └── email.ts                 # send_email binding wrapper
 ├── db/schema.ts                 # Drizzle schema (if DB)
 ├── schemas/
 └── styles/global.css            # @import "tailwindcss"
 public/{favicon.svg,robots.txt,og/}
-.github/workflows/ci.yml
-astro.config.mjs, biome.json, lefthook.yml, wrangler.toml
+drizzle/                         # generated migrations (= wrangler migrations_dir)
+astro.config.mjs, vitest.config.ts, wrangler.toml
 ```
 
 ## Setup
 
 ```bash
-bun create astro@latest my-site && cd my-site
+bun create astro@latest my-site -- --template minimal   # then pin astro@^6 (see Version policy)
 
 # Core
 bunx astro add tailwind
@@ -132,31 +137,27 @@ bunx shadcn@latest init
 
 # Server runtime — only when SSR, Actions, DB, or auth need Workers
 bunx astro add cloudflare
-bun add -d wrangler @cloudflare/workers-types
+bun add -d wrangler
 
-# Quality
-bun add -d @biomejs/biome lefthook
-bunx biome init && bunx lefthook install
-
-# Logging + monitoring
-bun add pino
-bunx astro add @sentry/astro
+# Test
+bun add -d vitest @cloudflare/vitest-pool-workers
 
 # Optional
-bun add resend react-email @react-email/components                       # email
-bun add drizzle-orm postgres better-auth && bun add -d drizzle-kit       # DB + auth
-bun add -d pagefind                                                      # search
+bun add drizzle-orm better-auth && bun add -d drizzle-kit   # DB + auth
+bun add -d pagefind                                          # search
 
-# Provision Hyperdrive over your self-hosted Postgres + a KV namespace
-bunx wrangler hyperdrive create my-site-db --connection-string="postgres://user:pass@host:5432/db"
+# Cloudflare resources — each command prints an id for wrangler.toml
+bunx wrangler d1 create my-site
 bunx wrangler kv namespace create KV
+bunx wrangler email sending enable example.com   # onboard the sending domain
+bunx wrangler types                              # regenerate Env after any config edit
 ```
 
 ## Integration patterns
 
 ### Content Collections
 
-Schema is the source of truth for frontmatter — Astro validates at build time and generates types.
+Schema is the source of truth for frontmatter — Astro validates at build time and generates types. Config lives at `src/content.config.ts`; loaders are `glob({ pattern, base })`.
 
 ```ts
 // src/content.config.ts
@@ -180,36 +181,7 @@ const blog = defineCollection({
 export const collections = { blog }
 ```
 
-Listing:
-
-```astro
----
-// src/pages/blog/index.astro
-import { getCollection } from 'astro:content'
-const posts = (await getCollection('blog', ({ data }) => !data.draft))
-  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
----
-<ul>
-  {posts.map((p) => <li><a href={`/blog/${p.id}`}>{p.data.title}</a></li>)}
-</ul>
-```
-
-Single post via `[...slug].astro`:
-
-```astro
----
-import { getCollection, render } from 'astro:content'
-
-export async function getStaticPaths() {
-  const posts = await getCollection('blog', ({ data }) => !data.draft)
-  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }))
-}
-
-const { post } = Astro.props
-const { Content } = await render(post)
----
-<Content />
-```
+Project conventions: every collection carries a `draft` flag and listings filter it out; `entry.id` is the slug; `render(entry)` returns `Content`. Standard `getCollection` / `getStaticPaths` usage otherwise.
 
 ### Astro Actions
 
@@ -217,21 +189,21 @@ Prefer Actions over API routes — Zod validation, typed RPC, progressive HTML f
 
 ```ts
 // src/actions/index.ts
-import { defineAction, ActionError } from 'astro:actions'
+import { ActionError, defineAction } from 'astro:actions'
 import { z } from 'astro:schema'
+import { createDb } from '~/lib/db'
 
 export const server = {
   subscribe: defineAction({
     accept: 'form',
-    input: z.object({ email: z.string().email() }),
+    input: z.object({ email: z.email() }),
     handler: async ({ email }) => ({ ok: true as const }),
   }),
   like: defineAction({
     input: z.object({ postId: z.string() }),
     handler: async ({ postId }, ctx) => {
       if (!ctx.locals.user) throw new ActionError({ code: 'UNAUTHORIZED' })
-      const { createDb } = await import('~/lib/db')
-      const db = createDb(ctx.locals.runtime.env.HYPERDRIVE.connectionString)
+      const db = createDb(ctx.locals.runtime.env.DB)
       // ...write with db
       return { likes: 42 }
     },
@@ -268,32 +240,18 @@ const result = Astro.getActionResult(actions.subscribe)
 
 ### React islands
 
-```astro
----
-import { LikeButton } from '~/components/react/LikeButton'
----
-<LikeButton postId={post.id} client:idle />
-```
-
-| Directive        | When                                          |
-| ---------------- | --------------------------------------------- |
-| `client:load`    | Critical, above-the-fold                      |
-| `client:idle`    | Default — hydrates after page load            |
-| `client:visible` | Below the fold                                |
-| `client:only`    | Browser-only deps (can't SSR)                 |
-
-`.astro` by default; React only when interactive.
+`.astro` by default; React only when interactive. Every island ships JS, so the directive is a budget decision: `client:idle` is the default choice, `client:load` only above the fold, `client:visible` below it, `client:only` when the dep can't SSR.
 
 ### Tailwind v4 + Cloudflare adapter
 
 ```ts
 // astro.config.mjs
-import { defineConfig } from 'astro/config'
-import tailwindcss from '@tailwindcss/vite'
-import mdx from '@astrojs/mdx'
-import sitemap from '@astrojs/sitemap'
-import react from '@astrojs/react'
 import cloudflare from '@astrojs/cloudflare'
+import mdx from '@astrojs/mdx'
+import react from '@astrojs/react'
+import sitemap from '@astrojs/sitemap'
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'astro/config'
 
 export default defineConfig({
   site: 'https://example.com',
@@ -317,9 +275,48 @@ export default defineConfig({
 
 Import once from a layout: `import '~/styles/global.css'`. No `tailwind.config.js` — tokens in `@theme`. shadcn/ui only after `@astrojs/react`.
 
-### Drizzle over Hyperdrive (optional)
+### Drizzle over D1 (optional)
 
-Bindings aren't available at module load on Workers — build the client per request from the Hyperdrive binding's connection string.
+D1 is a binding, not a connection string — no pool, no driver, no `DATABASE_URL`.
+
+```ts
+// src/lib/db.ts
+import { drizzle } from 'drizzle-orm/d1'
+import * as schema from '~/db/schema'
+
+// Pass locals.runtime.env.DB — bindings are request-scoped, never module scope.
+export const createDb = (d1: D1Database) => drizzle(d1, { schema })
+export type DB = ReturnType<typeof createDb>
+```
+
+```ts
+// src/db/schema.ts — SQLite tables, not pg
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+
+export const likes = sqliteTable('likes', {
+  postId: text('post_id').primaryKey(),
+  count: integer('count').notNull().default(0),
+})
+```
+
+```ts
+// drizzle.config.ts
+import { defineConfig } from 'drizzle-kit'
+
+export default defineConfig({
+  schema: ['./src/db/schema.ts', './src/db/auth-schema.ts'],
+  out: './drizzle',
+  dialect: 'sqlite',
+  // `generate` only emits SQL — no connection needed.
+  // drizzle-kit studio against remote D1 additionally needs driver: 'd1-http' + dbCredentials.
+})
+```
+
+`drizzle-kit generate` writes SQL into `drizzle/`; `wrangler d1 migrations apply my-site --local|--remote` runs it. Never `drizzle-kit migrate` — it has no D1 binding.
+
+#### If you outgrow D1 and switch to Postgres
+
+Postgres on Workers **must** go through Hyperdrive — an isolate can't hold a long-lived TCP connection across requests, and Hyperdrive pools them at the edge.
 
 ```ts
 // src/lib/db.ts
@@ -327,50 +324,55 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '~/db/schema'
 
-// connStr: runtime.env.HYPERDRIVE.connectionString on Workers
-export function createDb(connStr: string) {
-  const client = postgres(connStr, { prepare: false, max: 5 })
-  return drizzle(client, { schema })
-}
-export type DB = ReturnType<typeof createDb>
+// Pass locals.runtime.env.HYPERDRIVE.connectionString
+export const createDb = (connStr: string) =>
+  drizzle(postgres(connStr, { prepare: false, max: 5 }), { schema })
 ```
 
-`drizzle.config.ts` uses `process.env.DATABASE_URL` — migrations connect **directly** to Postgres, never through Hyperdrive.
+1. `bunx wrangler hyperdrive create my-site-db --connection-string="postgres://..."`, then a `[[hyperdrive]]` block in `wrangler.toml` (drop `[[d1_databases]]`).
+2. Schema moves from `drizzle-orm/sqlite-core` to `pg-core`; Better Auth adapter goes `provider: 'sqlite'` → `'pg'`.
+3. Keep `nodejs_compat` — postgres.js needs the Node `net` polyfill.
+4. Migrations connect **directly** to Postgres via `DATABASE_URL` (`drizzle-kit migrate`), not through Hyperdrive and not via `wrangler d1 migrations apply`. Hyperdrive is not a migration endpoint.
 
-For SSR pages or Actions that make several DB round trips per request, consider Smart Placement so the Worker can run closer to the database. Do not enable it for pure-static or asset-heavy sites; split DB-heavy backend logic into a separate Worker if frontend latency starts to suffer.
+For SSR/Actions with several DB round trips, consider Smart Placement — but not on pure-static or asset-heavy sites.
 
 ### Better Auth + KV (optional)
 
-Request-scoped like the DB. KV can back session/cache acceleration and approximate Better Auth rate-limit state across isolates, but it is eventually consistent. Keep immediate revocation, atomic counters, and other strong-consistency decisions in Postgres or a Durable Object.
+Request-scoped like the DB. KV keeps session reads off D1's single-region primary and backs Better Auth's built-in rate limiter.
 
 ```ts
 // src/lib/auth.ts
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import type { DB } from '~/lib/db'
+import { createDb } from '~/lib/db'
 import { sendEmail } from '~/lib/email'
-import { ResetPasswordEmail, VerifyEmail } from '~/emails'
 
-// env is the Workers bindings object (`locals.runtime.env`) — pass it straight through
-export function createAuth(db: DB, env: Env) {
+// env is the bindings object (`locals.runtime.env`)
+export function createAuth(env: Env) {
   return betterAuth({
-    database: drizzleAdapter(db, { provider: 'pg' }),
+    database: drizzleAdapter(createDb(env.DB), { provider: 'sqlite' }),
     secondaryStorage: {
       get: (key) => env.KV.get(key),
       set: (key, value, ttl) => env.KV.put(key, value, ttl ? { expirationTtl: ttl } : undefined),
       delete: (key) => env.KV.delete(key),
+    },
+    // Built-in limiter — do not hand-roll one
+    rateLimit: {
+      enabled: true,
+      storage: 'secondary-storage',
+      customRules: { '/sign-in/email': { window: 60, max: 5 } },
     },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.PUBLIC_ORIGIN,
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      sendResetPassword: async ({ user, url }) =>
-        sendEmail({ to: user.email, subject: 'Reset your password', react: ResetPasswordEmail({ url }) }, env.RESEND_API_KEY, env.EMAIL_FROM),
+      sendResetPassword: ({ user, url }) =>
+        sendEmail(env, user.email, 'Reset your password', `<a href="${url}">Reset your password</a>`),
     },
     emailVerification: {
-      sendVerificationEmail: async ({ user, url }) =>
-        sendEmail({ to: user.email, subject: 'Verify your email', react: VerifyEmail({ url }) }, env.RESEND_API_KEY, env.EMAIL_FROM),
+      sendVerificationEmail: ({ user, url }) =>
+        sendEmail(env, user.email, 'Verify your email', `<a href="${url}">Verify your email</a>`),
     },
   })
 }
@@ -378,33 +380,30 @@ export function createAuth(db: DB, env: Env) {
 
 ```ts
 // src/pages/api/auth/[...all].ts
-import { createDb } from '~/lib/db'
-import { createAuth } from '~/lib/auth'
 import type { APIRoute } from 'astro'
+import { createAuth } from '~/lib/auth'
 
 export const prerender = false
-export const ALL: APIRoute = ({ request, locals }) => {
-  const env = locals.runtime.env
-  const db = createDb(env.HYPERDRIVE.connectionString)
-  const auth = createAuth(db, env)
-  return auth.handler(request)
-}
+export const ALL: APIRoute = ({ request, locals }) =>
+  createAuth(locals.runtime.env).handler(request)
 ```
 
-Session: `await auth.api.getSession({ headers: Astro.request.headers })` (build `auth` per request). Wire `sendResetPassword`/`sendVerificationEmail` to Resend — flows fail silently otherwise. Re-run `bunx @better-auth/cli generate` + a new migration after every upgrade.
+Session: `createAuth(Astro.locals.runtime.env).api.getSession({ headers: Astro.request.headers })`. Re-run `bunx @better-auth/cli generate --output src/db/auth-schema.ts` + `bunx drizzle-kit generate` after every Better Auth or plugin change — plugins add tables.
 
-### Email (Resend + React Email)
+### Email (Cloudflare Email Sending)
 
-Only when the site sends mail. API key comes from the runtime env, passed in.
+No API key, no SDK — the `send_email` binding is the whole integration.
 
 ```ts
 // src/lib/email.ts
-import { Resend } from 'resend'
-import type { ReactElement } from 'react'
-
-export async function sendEmail(opts: { to: string; subject: string; react: ReactElement }, apiKey: string, from: string) {
-  const { error } = await new Resend(apiKey).emails.send({ from, ...opts })
-  if (error) throw new Error(`email send failed: ${error.message}`)
+export async function sendEmail(env: Env, to: string, subject: string, html: string) {
+  await env.EMAIL.send({
+    to,
+    from: { email: env.EMAIL_FROM, name: env.SITE_NAME },
+    subject,
+    html,
+    text: html.replace(/<[^>]+>/g, ' ').trim(), // clients that only show plain text
+  })
 }
 ```
 
@@ -413,79 +412,53 @@ From an Action:
 ```ts
 contact: defineAction({
   accept: 'form',
-  input: z.object({ email: z.string().email(), message: z.string().min(1).max(2000) }),
+  input: z.object({ email: z.email(), message: z.string().min(1).max(2000) }),
   handler: async ({ email, message }, ctx) => {
-    const env = ctx.locals.runtime.env
-    await sendEmail({ to: 'team@example.com', subject: `Contact from ${email}`, react: ContactEmail({ email, message }) }, env.RESEND_API_KEY, env.EMAIL_FROM)
+    await sendEmail(ctx.locals.runtime.env, 'team@example.com', `Contact from ${email}`, `<p>${message}</p>`)
     return { ok: true as const }
   },
 }),
 ```
 
-Bindings: `RESEND_API_KEY`, `EMAIL_FROM` (verified Resend sender).
+The `from` domain must be onboarded first: `bunx wrangler email sending enable example.com`. Transactional only — marketing sends belong on a marketing platform.
 
-### Logging (pino)
+### R2 (optional)
 
-`console.log` is fine in build scripts; in SSR / Actions / middleware, use pino.
+Not in the base stack. Add it when there are actual uploads — `bunx wrangler r2 bucket create my-site`, then:
 
-```ts
-// src/lib/logger.ts
-import pino from 'pino'
-
-export const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' })
+```toml
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "my-site"
 ```
 
-Mounted in middleware below. On Workers, view logs with `wrangler tail`. Don't ship `pino-pretty` (dev-only transport).
-
-### Error monitoring (Sentry)
-
-`bunx astro add @sentry/astro` wires client + server.
+It is a binding like the rest, so serve through a route handler and never add an S3 SDK:
 
 ```ts
-// astro.config.mjs
-import sentry from '@sentry/astro'
+// src/pages/api/files/[key].ts
+import type { APIRoute } from 'astro'
 
-export default defineConfig({
-  integrations: [
-    sentry({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.MODE,
-      sourceMapsUploadOptions: { project: 'my-site', authToken: process.env.SENTRY_AUTH_TOKEN },
-    }),
-    // ...
-  ],
-})
+export const prerender = false
+export const GET: APIRoute = async ({ params, locals }) => {
+  const obj = await locals.runtime.env.R2.get(params.key!)
+  if (!obj) return new Response('Not found', { status: 404 })
+  return new Response(obj.body, {
+    headers: { 'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream' },
+  })
+}
 ```
 
-`astro.config.mjs` runs at build time under Node — use `process.env` here. In `src/` use `import.meta.env` / `runtime.env`. Errors in Actions and SSR pages are captured automatically.
+Authorize writes. For large or direct-from-browser uploads, put the bucket behind a custom domain instead of streaming through the Worker.
 
 ### Security middleware
 
-`src/middleware.ts` runs on every server-rendered request (prerendered pages skip it). Security headers, request logging, and an approximate KV-backed rate limit on auth/Actions.
+`src/middleware.ts` runs on every server-rendered request. Headers only — Better Auth handles its own rate limiting.
 
 ```ts
 // src/middleware.ts
 import { defineMiddleware } from 'astro:middleware'
-import { logger } from '~/lib/logger'
 
-// KV-backed so counts survive across isolates (approximate — KV is eventually consistent)
-async function rateLimit(kv: KVNamespace, keyPrefix: string, limit = 20, windowSec = 900) {
-  const windowId = Math.floor(Date.now() / 1000 / windowSec)
-  const key = `${keyPrefix}:${windowId}`
-  const n = Number((await kv.get(key)) ?? 0) + 1
-  await kv.put(key, String(n), { expirationTtl: windowSec * 2 })
-  return n <= limit
-}
-
-export const onRequest = defineMiddleware(async (ctx, next) => {
-  const start = performance.now()
-  const ip = ctx.request.headers.get('cf-connecting-ip') ?? 'anon'
-
-  if (ctx.url.pathname.startsWith('/api/auth') || ctx.url.pathname.startsWith('/_actions/')) {
-    const kv = ctx.locals.runtime.env.KV
-    if (!(await rateLimit(kv, `${ip}:${ctx.url.pathname}`))) return new Response('Too many requests', { status: 429 })
-  }
-
+export const onRequest = defineMiddleware(async (_ctx, next) => {
   const res = await next()
   res.headers.set('X-Frame-Options', 'DENY')
   res.headers.set('X-Content-Type-Options', 'nosniff')
@@ -493,199 +466,142 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   res.headers.set('Content-Security-Policy',
     "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'")
-
-  logger.info({ method: ctx.request.method, path: ctx.url.pathname, status: res.status, ms: Math.round(performance.now() - start) })
   return res
 })
 ```
 
-Use `cf-connecting-ip` for the real client IP. The KV rate limiter uses a fixed window based on time intervals, which is approximate due to eventual consistency. For exact per-key counts use a Durable Object. Tighten CSP if you use `is:inline` or third-party widgets. Prerendered pages skip middleware — set static headers in Cloudflare's response rules if needed.
+Tighten CSP if you use `is:inline` or third-party widgets. **Prerendered pages skip middleware** — set headers for those in Cloudflare's response header rules. If you need a limiter outside Better Auth, use the `ratelimits` binding (`env.LIMITER.limit({ key })`), keyed on `cf-connecting-ip`.
 
 ### SEO + RSS + Sitemap
 
-Sitemap is automatic once `@astrojs/sitemap` is installed and `site` is set.
+Sitemap is automatic once `@astrojs/sitemap` is installed and `site` is set in `astro.config.mjs` — forgetting `site` silently produces no sitemap and breaks canonical URLs.
 
-```ts
-// src/pages/rss.xml.ts
-import rss from '@astrojs/rss'
-import { getCollection } from 'astro:content'
-
-export async function GET(context) {
-  const posts = await getCollection('blog', ({ data }) => !data.draft)
-  return rss({
-    title: 'My Blog',
-    description: 'Thoughts and notes',
-    site: context.site!,
-    items: posts.map((p) => ({
-      title: p.data.title,
-      description: p.data.description,
-      pubDate: p.data.pubDate,
-      link: `/blog/${p.id}/`,
-    })),
-  })
-}
-```
-
-Meta tags: a small `<SEO>` component reading from frontmatter — title, description, canonical, OG, Twitter.
+`src/pages/rss.xml.ts` uses `@astrojs/rss`'s `rss()` over `getCollection('blog')`, same draft filter as the listings. Meta tags go in one `<SEO>` component reading frontmatter — title, description, canonical, OG, Twitter — used by every layout rather than hand-written per page.
 
 ### Pagefind (optional)
 
-Build-time static index from the built HTML.
-
-```json
-{ "scripts": { "build": "astro build && pagefind --site dist" } }
-```
-
-```astro
-<link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
-<div id="search"></div>
-<script>
-  import('/pagefind/pagefind-ui.js').then(({ PagefindUI }) => new PagefindUI({ element: '#search' }))
-</script>
-```
+Build-time static index over the built HTML — no server, no API key. Chain it into the build script (`"build": "astro build && pagefind --site dist"`), then mount `PagefindUI` from `/pagefind/pagefind-ui.js` in a `<script>`. Runs on the output, so it indexes prerendered pages only.
 
 ## Configuration
 
 ### TypeScript
 
-`tsconfig.json` extends `astro/tsconfigs/strict`, adds alias `"~/*": ["./src/*"]` + `"verbatimModuleSyntax": true`, and `"types": ["@cloudflare/workers-types"]` so `KVNamespace` / `Hyperdrive` binding types resolve.
+`tsconfig.json` extends `astro/tsconfigs/strict`, adds alias `"~/*": ["./src/*"]` + `"verbatimModuleSyntax": true`. Binding types come from the generated `worker-configuration.d.ts` (`bunx wrangler types`) — do not hand-write `Env`.
 
 ### Environment variables
 
-| Scope | Convention | Access |
-|---|---|---|
-| Public (client-safe) | `PUBLIC_` prefix | `import.meta.env.PUBLIC_FOO` |
-| Server secrets | Worker binding | `Astro.locals.runtime.env.FOO` (pages) / `ctx.locals.runtime.env.FOO` (Actions, middleware) |
+| Scope                | Convention       | Access                                                                                       |
+| -------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| Public (client-safe) | `PUBLIC_` prefix | `import.meta.env.PUBLIC_FOO`                                                                 |
+| Server secrets       | Worker binding   | `Astro.locals.runtime.env.FOO` (pages) / `ctx.locals.runtime.env.FOO` (Actions, middleware)  |
 
-Secrets (`BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `SENTRY_DSN`) are Worker secrets — `wrangler secret put NAME`, never in `wrangler.toml` or the client bundle. The `Env` type is generated by `bunx wrangler types` — re-run after editing `wrangler.toml`.
-
-### Biome
-
-```json
-{
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
-  "files": { "ignoreUnknown": true, "includes": ["**", "!**/dist/**", "!**/.astro/**", "!**/node_modules/**"] },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "linter": { "enabled": true, "rules": { "recommended": true } },
-  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } }
-}
-```
-
-`.astro` files aren't first-class in Biome yet — format their `<script>`/`<style>` blocks manually or with Prettier-Astro. `.ts`/`.tsx` are covered. Use `bunx biome check --write` and `bunx astro check` (type-checks `.astro`).
-
-### lefthook
-
-```yaml
-# lefthook.yml
-pre-commit:
-  parallel: true
-  commands:
-    biome:
-      glob: '*.{ts,tsx,js,jsx,json,jsonc}'
-      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
-      stage_fixed: true
-```
-
-`bunx lefthook install` once per clone.
-
-### GitHub Actions
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on: { pull_request: {}, push: { branches: [main] } }
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bunx biome ci
-      - run: bunx astro check
-      - run: bun test
-      - run: bun run build
-  deploy:
-    needs: check
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run build          # emit dist/ (Worker + assets) before deploy
-      - run: bunx wrangler deploy
-        env: { CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }} }
-```
-
-`astro check` is the only place `.astro` gets type-checked. Building catches MDX / Content Collection schema mismatches. If migrations: `bunx drizzle-kit migrate` (against `DATABASE_URL`, direct to Postgres) pre-deploy.
+Secrets (`BETTER_AUTH_SECRET`, OAuth client secrets) go in with `wrangler secret put NAME`, never in `wrangler.toml` or the client bundle. Re-run `bunx wrangler types` after editing `wrangler.toml`.
 
 ## Testing
 
+Vitest through `@cloudflare/vitest-pool-workers` — real D1/KV bindings instead of mocks.
+
 ```ts
-import { describe, expect, test } from 'bun:test'
-test('adds', () => { expect(1 + 1).toBe(2) })
+// vitest.config.ts
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
+
+export default defineWorkersConfig({
+  test: {
+    poolOptions: {
+      workers: {
+        wrangler: { configPath: './wrangler.toml' },
+        miniflare: { compatibilityFlags: ['nodejs_compat'] },
+      },
+    },
+  },
+})
 ```
 
-`bun test`, `bunx astro check`. React islands: `@testing-library/react` + `happy-dom`. `.astro` components: Playwright.
+```ts
+// src/db/likes.test.ts
+import { env } from 'cloudflare:test'
+import { expect, test } from 'vitest'
+import { createDb } from '~/lib/db'
+import { likes } from './schema'
 
-## Deployment: Cloudflare Workers
+test('records a like', async () => {
+  const db = createDb(env.DB)
+  await db.insert(likes).values({ postId: 'p1', count: 1 })
+  expect(await db.select().from(likes)).toHaveLength(1)
+})
+```
 
-`@astrojs/cloudflare` emits a Worker into `dist/`; `wrangler deploy` ships it. Self-hosted Postgres is reached through **Hyperdrive** (connection pooler + query cache); optional session/cache acceleration and approximate rate-limit state can live in **KV**.
+`bunx vitest` (watch) / `bunx vitest run` (once). Apply migrations to the local D1 first (`wrangler d1 migrations apply my-site --local`). Never mock the ORM.
 
-Pure-static sites (no SSR/Actions/DB/auth) should skip the adapter and deploy `dist/` as static assets instead.
+Content Collections, `.astro` rendering, and island hydration aren't covered by the Workers pool — `bunx astro check` for types, Playwright for the rendered page. React islands in isolation: `@testing-library/react` + `happy-dom` in a separate non-Workers Vitest project.
+
+Add `@cloudflare/vitest-pool-workers` to `tsconfig.json` `types` so `cloudflare:test` resolves.
+
+## Deploy
+
+`@astrojs/cloudflare` emits a Worker into `dist/`; `wrangler deploy` ships it. Pure-static sites (no SSR/Actions/DB/auth) should skip the adapter and deploy `dist/` as static assets instead.
 
 ```toml
 # wrangler.toml
 name = "my-site"
 main = "./dist/_worker.js/index.js"   # emitted by @astrojs/cloudflare
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-07-01"
 compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
 
 [assets]
 directory = "./dist"
 
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "<id from `wrangler hyperdrive create`>"
+# Only the bindings the site actually uses:
+
+[[d1_databases]]
+binding = "DB"
+database_name = "my-site"
+database_id = "<id from `wrangler d1 create`>"
+migrations_dir = "drizzle"
 
 [[kv_namespaces]]
 binding = "KV"
 id = "<id from `wrangler kv namespace create`>"
 
+[[send_email]]
+name = "EMAIL"
+
 [vars]
 PUBLIC_ORIGIN = "https://my-site.example.com"
-# Secrets (never here): wrangler secret put BETTER_AUTH_SECRET / RESEND_API_KEY / SENTRY_DSN
+EMAIL_FROM = "hello@example.com"
+SITE_NAME = "My Site"
+# Secrets (never here): wrangler secret put BETTER_AUTH_SECRET / ...
 ```
 
-Setup:
+No CI pipeline — deploy manually from a clean checkout:
 
-1. For SSR, Actions, DB, or auth: `bunx astro add cloudflare` (adapter) + `bun add -d wrangler`.
-2. Provision Hyperdrive + KV (see Setup); put the ids in `wrangler.toml`.
-3. Secrets: `wrangler secret put BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `RESEND_API_KEY`, `SENTRY_DSN` (also needs `SENTRY_AUTH_TOKEN` at build for sourcemaps).
-4. If migrations: `bunx drizzle-kit migrate` against `DATABASE_URL` (direct, not Hyperdrive).
-5. `bunx wrangler deploy` (or push to `main` — see CI). Add a custom domain in the Cloudflare dashboard.
+```bash
+bunx astro check && bunx vitest run     # the checks CI would have run
+bun run build
+bunx wrangler d1 migrations apply my-site --remote   # only if the site has a DB
+bunx wrangler deploy
+```
+
+Secrets are one-time: `wrangler secret put BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Custom domain goes in the Cloudflare dashboard. Building also catches MDX / Content Collection schema mismatches, and `astro check` is the only place `.astro` gets type-checked.
 
 ## Gotchas
 
-- **Bindings are request-time only** — read Hyperdrive/KV/secrets from `Astro.locals.runtime.env` (pages) or `ctx.locals.runtime.env` (Actions, middleware), never module scope. Build the DB client + Better Auth per request.
-- **`nodejs_compat` required** for `postgres.js` (Node `net` polyfill). Set `compatibility_flags = ["nodejs_compat"]`, compatibility date ≥ 2024-09-23.
-- **Hyperdrive vs migrations**: runtime reads `env.HYPERDRIVE.connectionString`; `drizzle-kit` migrations connect to `DATABASE_URL` directly.
-- **Smart Placement**: consider it for DB-heavy SSR/Actions with multiple backend round trips; avoid it for pure-static or asset-heavy sites unless backend logic is split into a separate Worker.
-- **KV is eventually consistent** and read-cached (~60s): useful for session/cache acceleration and approximate throttles, wrong for immediate global revocation, read-after-write, or atomic counters — use Postgres or a Durable Object there.
-- **Tailwind v4**: `@tailwindcss/vite`, not the deprecated `@astrojs/tailwind`. Tokens in CSS `@theme`.
-- **Content config location**: `src/content.config.ts` (Astro 5+); the legacy `src/content/config.ts` is silently ignored.
-- **Content Layer loaders**: `glob({ pattern, base })` — `type: 'content'` is gone.
-- **Actions vs API routes**: prefer Actions for typed RPC. API routes only for webhooks, OAuth callbacks, RSS, sitemap.
-- **`prerender` default is `static`** — Astro prerenders by default; set `export const prerender = false` on pages that need the Worker (or `output: 'server'` to flip the default).
-- **Postgres driver**: default to `postgres-js` with `drizzle-orm/postgres-js`; allow `pg` only when a dependency or official Cloudflare integration makes it the safer path.
-- **Better Auth tables** are generated — don't hand-edit. Regenerate (`bunx @better-auth/cli generate`) + new migration after upgrades. Hashing is Web Crypto (scrypt) — no `bcrypt`/`argon2`.
-- **Env**: build-time public via `import.meta.env.PUBLIC_*`; runtime secrets via `runtime.env`. `process.env` only works in `astro.config.mjs` (build) or under `nodejs_compat`.
+- **D1 is SQLite**: no `jsonb`, no `uuid` type, integer timestamps. Use `drizzle-orm/sqlite-core`, not `pg-core`.
+- **D1 limits**: 10 GB per database, 1 MB per query result, single-region primary. Past those, switch to Hyperdrive + Postgres.
+- **KV is eventually consistent** and read-cached (~60s): fine for session acceleration, wrong for immediate global revocation or atomic counters — use D1 or a Durable Object there.
+- **Astro 6 ships Zod 4**: `z.string().email()` → `z.email()`, same for `.url()` / `.uuid()`. Applies to `astro:schema` in Actions and to collection schemas.
+- **Astro 6 needs Node ≥ 22.12** for the build (the deployed Worker is unaffected).
+- **Adapter major is coupled to Astro major**: `astro@6` ↔ `@astrojs/cloudflare@13`. Bumping one alone breaks the peer range.
+- **Content Layer is the only API in Astro 6**: `glob({ pattern, base })`, config at `src/content.config.ts` (the legacy `src/content/config.ts` was removed, not deprecated), `type: 'content'` is gone.
+- **Actions vs API routes**: prefer Actions for typed RPC. API routes only for webhooks, OAuth callbacks, RSS, sitemap, file serving.
+- **`prerender` default is `static`** — set `export const prerender = false` on pages that need the Worker (or `output: 'server'` to flip the default).
+- **Better Auth on Workers** hashes via Web Crypto (scrypt) — `bcrypt`/`argon2` don't run there anyway.
 - **React only when needed**: every island ships JS. Toggles via vanilla `<script>` in `.astro` are fine.
 - **Silent hydration mismatch**: a React component in `.astro` without `client:*` renders static, no warning. Always add a directive.
 - **MDX custom components**: pass via `components={{ ... }}` on `<Content />` — not auto-imported.
 - **Bun lockfile** is `bun.lock`. Commit it.
-- **Middleware runs only on SSR**: prerendered pages skip it — set static headers in Cloudflare response rules.
-- **Sentry sourcemaps need `SENTRY_AUTH_TOKEN` at build time**, not just runtime — otherwise minified stack traces.
-- **Resend sender**: `EMAIL_FROM` must be on a verified domain — Better Auth flows fail silently otherwise.
-- **`console.log` banned** in SSR / Actions / middleware. Build scripts and `.astro` frontmatter are exempt. Inspect Workers logs with `wrangler tail`.
+- **Logging is `console`** with an object payload, captured by Workers Logs when `observability.enabled` is on. Inspect live with `wrangler tail`, or query in the Workers Observability dashboard. No log library.
+- **`@cloudflare/vitest-pool-workers` pins its Vitest major** (peer `vitest ^4.1`). Bump the two together.

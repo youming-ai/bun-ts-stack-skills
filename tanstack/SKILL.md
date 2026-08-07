@@ -28,7 +28,7 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 | UI           | shadcn/ui (Radix + Tailwind) + lucide-react     |
 | Forms        | TanStack Form                                   |
 | Validation   | Zod                                             |
-| Logs         | Workers Observability (`console` + Workers Logs)|
+| Logs         | Workers Observability (`console` + Workers Logs, `wrangler tail`)|
 | Test         | Vitest + `@cloudflare/vitest-pool-workers`      |
 | Deploy       | `bunx wrangler deploy`                          |
 
@@ -59,7 +59,10 @@ Everything below is **not** in the default stack. Add one when the listed condit
 | Standalone API with many middleware layers or OpenAPI      | Hono, mounted at `src/routes/api/$.ts`                 |
 | Strong consistency, atomic counters, realtime coordination | Durable Object                                         |
 | Rate limits on non-auth routes                             | Cloudflare `ratelimits` binding                        |
+| Bot protection on signup / public forms                    | Cloudflare Turnstile — free, no CAPTCHA friction       |
 | User uploads / large media                                 | R2 binding — serve via a route handler, no S3 SDK       |
+| AI features (chat, classification, embeddings)             | Workers AI binding — no external API key               |
+| Scheduled jobs (cleanup, digests, reports)                 | Cron Triggers in `wrangler.toml`                       |
 | Long-running or multi-step background jobs                 | Cloudflare Queues / Workflows                          |
 | Second language                                            | i18n lib of choice — do not hand-roll                  |
 

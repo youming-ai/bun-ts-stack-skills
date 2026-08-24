@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
 # Build the TanStack skill package.
 
 set -euo pipefail

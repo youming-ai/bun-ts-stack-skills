@@ -7,7 +7,7 @@ A Claude skill for full-stack TypeScript apps on **Bun + TanStack Start**, built
 | Layer | Choice |
 | --- | --- |
 | Framework | TanStack Start (React 19 + TanStack Router) |
-| Database / cache | Cloudflare D1 / KV |
+| Database | Cloudflare D1 |
 | Auth | Better Auth |
 | Email | Cloudflare Email Sending |
 | ORM / forms / validation | Drizzle / TanStack Form / Zod |

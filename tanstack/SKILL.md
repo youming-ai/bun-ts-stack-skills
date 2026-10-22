@@ -208,7 +208,7 @@ bunx @better-auth/cli generate --config src/lib/auth.cli.ts --output db/auth-sch
 
 # Migrations: Void reads db/schema.ts and writes SQL + Drizzle metadata to db/migrations/.
 bunx void db generate
-bunx void db migrate          # apply to the local D1
+bunx void db migrate          # apply to the local D1 (`vite dev` also applies pending ones on start)
 # Remote is applied by `void deploy` (after a D1 Time Travel restore point).
 ```
 
@@ -283,6 +283,8 @@ export function getAuth() {
     database: drizzleAdapter(getDb(), { provider: 'sqlite' }),
     // Signed session cookie skips the D1 lookup on most requests.
     session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
+    // Cloudflare puts the client IP here; without it the limiter shares one bucket per path.
+    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.PUBLIC_ORIGIN,
     emailAndPassword: {
@@ -363,7 +365,7 @@ Re-run `bunx @better-auth/cli generate --config src/lib/auth.cli.ts --output db/
 
 ### Email (Cloudflare Email Sending)
 
-Cloudflare Email Sending is in public beta. No API key — `sendEmail` from `void/email` sends through the Cloudflare `send_email` binding in production and into a local inbox in dev. Sender comes from `email.from` in `void.config.ts`.
+Cloudflare Email Sending is in public beta. No API key — `sendEmail` from `void/email` sends through the Cloudflare `send_email` binding in production. Sender comes from `email.from` in `void.config.ts`. Void's docs promise a local dev inbox, but in a TanStack Start app on `void@1.2.1` dev sends returned `BINDING_MISSING` — verify email flows on a deployed Worker, not in dev.
 
 ```ts
 // src/lib/email.ts
@@ -565,7 +567,7 @@ import { defineConfig } from 'void/config'
 
 export default defineConfig({
   worker: {
-    compatibility_date: '2026-10-22', // bump periodically; older dates silently miss newer flag defaults
+    compatibility_date: '2026-10-15', // a few days back: the workerd bundled with Void lags, and a newer date fails `vite dev`
     compatibility_flags: ['nodejs_compat'],
   },
   email: { from: 'My App <hello@example.com>' },
@@ -581,7 +583,7 @@ export default defineConfig({
 import { defineEnv, string, url } from 'void/env'
 
 export default defineEnv({
-  PUBLIC_ORIGIN: url().default('https://my-app.example.com'),
+  PUBLIC_ORIGIN: url(), // non-secret, but declared here so it's typed; set it like a secret
   BETTER_AUTH_SECRET: string(),
   GOOGLE_CLIENT_ID: string(),
   GOOGLE_CLIENT_SECRET: string(),
@@ -590,7 +592,7 @@ export default defineEnv({
 })
 ```
 
-Don't also put an `env.ts` key in `worker.vars` — production builds reject the duplicate.
+Declare every server value here, secret or not: `void/env` types only `env.ts` keys (a `worker.vars` value reads as `unknown`), production builds reject a key that is in both, and a `.default()` was not applied at runtime in dev — so make keys required and set them in `.env` / with `void secret put`.
 
 D1 (`env.DB`), KV (`env.KV`, if used), R2 (`env.STORAGE`), Workers AI (`env.AI`), and queues are inferred — don't declare them. Bindings Void doesn't infer (`ratelimits`, Vectorize, Analytics Engine, service bindings, Durable Objects) go under `cloudflare` with the usual Wrangler field names; Void passes them through.
 
@@ -629,7 +631,7 @@ Because isolates can survive a binding change, never derive clients from a secre
 
 ### TypeScript
 
-`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Set `"extends": "./.void/tsconfig.json"` and run `bunx void prepare` to generate it — the generated `env.d.ts` / `queues.d.ts` / `db.d.ts` are only picked up through `extends` (if `extends` is already taken, run `bunx void init --tsconfig`). Do not hand-write `Env`. Add `"@cloudflare/vitest-plugin/types"` to `types` for `cloudflare:test`.
+`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Run `bunx void prepare`, then `bunx void init --tsconfig`: it adds `"extends": "./.void/tsconfig.json"` and merges Void's `paths` (`void/queues`, `@schema`) into yours — the TanStack scaffold's own `paths` otherwise shadows them and `queues.email` stops type-checking. It also writes Void's `.gitignore` entries. Do not hand-write `Env`. Add `"@cloudflare/vitest-plugin/types"` to `types` for `cloudflare:test`.
 
 ### Observability
 
@@ -681,7 +683,7 @@ export default defineConfig(async () => ({
   plugins: [
     cloudflareTest({
       miniflare: {
-        compatibilityDate: '2026-10-22', // keep in step with void.config.ts
+        compatibilityDate: '2026-10-15', // keep in step with void.config.ts
         compatibilityFlags: ['nodejs_compat'],
         d1Databases: ['DB'],
         bindings: { TEST_MIGRATIONS: await readD1Migrations('./db/migrations') }, // reads top-level *.sql, skips meta/
@@ -790,7 +792,7 @@ export const createPost = createServerFn({ method: 'POST' })
 - **Bun lockfile** is `bun.lock` (text). Commit it.
 - **Logging is `console`** with an object payload (`console.log({ traceId, event })`), captured by Workers Logs when `observability.enabled` is on. Inspect live with `void project logs`, or query in the Workers Observability dashboard. No log library — for retention beyond Workers' window, ship to R2 via Logpush.
 - **`@cloudflare/vitest-pool-workers` is deprecated** — use `@cloudflare/vitest-plugin` (peer `vitest ^4.1 || ^5`). `defineWorkersConfig` and `poolOptions` are gone; `env` from `cloudflare:test` is deprecated in favour of `cloudflare:workers`.
-- **`compatibility_date` drift**: an old date silently disables newer compatibility-flag defaults. Bump `worker.compatibility_date` at least quarterly; the email/D1/ratelimits bindings need a recent date for the latest binding semantics.
+- **`compatibility_date` drift**: an old date silently disables newer compatibility-flag defaults; a date newer than the installed workerd supports fails `vite dev` ("newest date supported by this server binary is …"). Bump `worker.compatibility_date` at least quarterly, to a date a few days old; the email/D1/ratelimits bindings need a recent date for the latest binding semantics.
 - **Void plugin order**: `voidPlugin()` must come before `tanstackStart()` in `vite.config.ts`. Don't also add `@cloudflare/vite-plugin` — Void provides it.
 - **Void state files**: commit `void.config.ts` and `void.lock.json`; gitignore `.void/`, `.void-wrangler.jsonc`, and `.env`. Deleting the lock makes the next deploy provision new resources.
 - **Secrets need `env.ts`**: `void secret put` / `sync` throw for names not declared there, and `void deploy` fails while a required key is unset remotely.

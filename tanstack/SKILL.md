@@ -33,18 +33,16 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 
 ### Non-negotiables
 
-- Bun is the dev runtime: package manager and script runner. Never `npm` / `pnpm` / `yarn` / `node`. (Tests run in workerd via Vitest, not in Bun.)
-- Production runs on **Cloudflare Workers** — a V8 isolate, not Node. Runtime code uses Web-standard APIs (`fetch`, Web Crypto, Streams).
-- No Bun-specific APIs (`Bun.password`, `bun:sqlite`, `Bun.s3`) in runtime code — it never executes under Bun. Dev, test, and prod all run on workerd.
-- **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level. Isolates can be reused across a binding or secret change, so a client built at module scope keeps the old value; per-request construction always sees the current one.
+- Bun is only the package manager and script runner — never `npm` / `pnpm` / `yarn` / `node`. Dev, test, and prod code all run on workerd (a V8 isolate, not Node or Bun): use Web-standard APIs (`fetch`, Web Crypto, Streams), never `Bun.*` / `bun:*`.
+- **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level, and never cache per-user state at module scope. Isolates are reused across requests and across a binding or secret change, so anything built at module scope can be stale.
 - TypeScript `strict: true` everywhere.
 - Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `nodemailer`, `winston`, `bunyan`, `pino`, `express`.
-- **Version policy**: TanStack Start tracks one major behind current when a previous major exists. Today only `1.x` has ever shipped, so pin `"@tanstack/react-start": "^1.168"` in `package.json` and bump deliberately. Pin `void` too (`^1.2`) — the CLI must match the installed package version or Cloudflare deploys refuse to run.
+- **Versions**: pin `"@tanstack/react-start": "^1.168"` and `"void": "^1.2"`, bump deliberately. The Void CLI must match the installed package or Cloudflare deploys refuse to run.
 - Vitest is the test runner, always through `@cloudflare/vitest-plugin` so tests run in workerd with real bindings. Not `bun test`, not `jest`.
 
 ### Deliberately unconfigured
 
-No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. Nothing in this skill depends on them, so adding them later is additive. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions from `bunx void init --github`, plus `bunx void prepare` + `bunx tsc --noEmit` + `bunx vitest run` before deploy.
+No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. Nothing in this skill depends on them, so adding them later is additive. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions from `bunx void init --github`, running the pre-deploy checks listed under Deploy.
 
 ### Add only when the need is real
 
@@ -76,34 +74,10 @@ Everything below is **not** in the default stack. Add one when the listed condit
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph Build
-    R[Routes SSG] -->|prerender| H[flat HTML]
-  end
-  H -->|no Worker run| CDN[Cloudflare CDN] --> Browser
-
-  subgraph Request
-    SSR[Routes SSR / default] --> W[Cloudflare Worker]
-    SFN[createServerFn stub<br/>co-located, same file] -->|typed POST| W
-    W -->|React server render| Browser2[Browser]
-    W --> D1[(D1)]
-    W --> MAIL[(send_email)]
-    W --> Q[(Queues / Workflows)]
-    W --> AI[(Workers AI / Vectorize)]
-    D1 -. Drizzle / Better Auth .- W
-  end
-```
-
-- CRUD → **server functions** co-located with components.
-- Webhooks, files, anything non-React → **route `server.handlers`** (`src/routes/api/*.ts`).
-- **Better Auth** mounts as a route handler and uses Drizzle over D1.
+- CRUD → **server functions** co-located with components. Webhooks, files, anything non-React → **route `server.handlers`** (`src/routes/api/*.ts`).
 - One **Zod schema** per concept in `src/schemas/`, shared by server fn / Form / validation.
-- Server values come from **`void/env`** (declared in `env.ts`), bindings from `cloudflare:workers` — never `process.env`. Public values use the `VITE_` prefix.
 
 ### Rendering strategy
-
-_Rendering, execution-model, secrets, and deploy flows below are adapted from Lovable's [Building apps using TanStack Start](https://lovable.dev/blog/building-apps-using-tanstack-start)._
 
 | Route type                              | Mode         | How                                                                 |
 | --------------------------------------- | ------------ | ------------------------------------------------------------------- |
@@ -113,7 +87,7 @@ _Rendering, execution-model, secrets, and deploy flows below are adapted from Lo
 
 Prerendered routes serve flat HTML from the CDN with no Worker invocation — use them for everything that doesn't read per-user data.
 
-Why not CSR by default: a client-rendered page ships an empty `<div id="root">` shell, so content needs two round trips (JS, then data). Crawlers render it late or not at all, and social previewers (Slack, LinkedIn, X) only read the initial HTML's meta tags. With SSR the Worker runs loaders and streams finished HTML on the first request:
+Default to SSR, not CSR: search crawlers and link-preview bots read the first HTML response, and a CSR shell has no content or per-page meta tags in it. SSR runs loaders in the Worker and returns finished HTML in one round trip:
 
 ```mermaid
 sequenceDiagram
@@ -384,35 +358,13 @@ export async function sendEmail(to: string, subject: string, html: string) {
 }
 ```
 
-`void deploy` checks the `email.from` domain and offers to set it up (it must be a zone on your account). Transactional only — marketing sends belong on a marketing platform.
+`void deploy` checks the `email.from` domain and offers to set it up (it must be a zone on your account). Sending to arbitrary recipients needs Workers Paid; Free only reaches verified destination addresses. Transactional only — marketing sends belong on a marketing platform.
 
 ### R2 (not in the base stack)
 
 Add it when there are actual uploads. Reading `env.STORAGE` is enough — Void infers the R2 binding and creates the bucket on deploy.
 
-It's a binding like the rest — serve through a route handler, never add an S3 SDK:
-
-```ts
-// src/routes/api/files/$key.ts
-import { createFileRoute } from '@tanstack/react-router'
-import { env } from 'cloudflare:workers'
-
-export const Route = createFileRoute('/api/files/$key')({
-  server: {
-    handlers: {
-      GET: async ({ params }) => {
-        const obj = await env.STORAGE.get(params.key)
-        if (!obj) return new Response('Not found', { status: 404 })
-        return new Response(obj.body, {
-          headers: { 'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream' },
-        })
-      },
-    },
-  },
-})
-```
-
-Authorize writes **before** calling `env.STORAGE.put()` — the route handler is the trust boundary, not R2. For large or direct-from-browser uploads, put the bucket behind a custom domain or issue presigned URLs instead of streaming through the Worker.
+Serve it through a route handler, never an S3 SDK. Reads are the mirror image: `env.STORAGE.get(key)` → `new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType } })`, 404 when `null`. Authorize writes **before** calling `env.STORAGE.put()` — the route handler is the trust boundary, not R2. For large or direct-from-browser uploads, put the bucket behind a custom domain or issue presigned URLs instead of streaming through the Worker.
 
 ```ts
 // src/routes/api/files/upload.ts — authorized PUT
@@ -559,7 +511,7 @@ No `tailwind.config.js` — tokens live in `@theme`. shadcn/ui must use its v4 m
 
 ### void.config.ts
 
-There is no `wrangler.toml`. Authored settings live in `void.config.ts`; provisioned IDs live in `void.lock.json` (commit both). Void generates `.void-wrangler.jsonc` for Cloudflare tooling — gitignore it, never edit it.
+There is no `wrangler.toml`. Authored settings live in `void.config.ts`; provisioned IDs live in `void.lock.json` (commit both). Void generates `.void/` and `.void-wrangler.jsonc` — gitignore them, never edit them. Deleting `void.lock.json` makes the next deploy provision new resources.
 
 ```ts
 // void.config.ts
@@ -606,7 +558,10 @@ D1 (`env.DB`), KV (`env.KV`, if used), R2 (`env.STORAGE`), Workers AI (`env.AI`)
 | Server values        | `env.ts`       | `env.FOO` from `void/env` (typed, validated)  |
 | Bindings (D1, R2, …) | inferred       | `env.DB` from `cloudflare:workers`            |
 
-Declare every server value in `env.ts` first — `void secret put` and `void secret sync` refuse names it doesn't declare. Then set them with `void secret put NAME` (bulk: `void secret sync <file>`); local values live in the root `.env`, which deploy never uploads. `.dev.vars` is not read. They are never part of the bundle — the runtime injects them as bindings at request time, so a rotation takes effect without a rebuild. With `nodejs_compat` and `compatibility_date` ≥ 2025-04-01, `process.env` is populated from vars and secrets too (useful for Node-style libraries), but app code reads declared values from `void/env` and bindings from `cloudflare:workers`. The build strips non-`VITE_` variables from client bundles, and ignores `VITE_*` from `.env` — pass production public values in the shell (`VITE_FOO=... void deploy`). `bunx void prepare` regenerates binding types.
+- Set server values with `void secret put NAME` (bulk: `void secret sync <file>`) — both refuse names not declared in `env.ts`. Local values live in the root `.env`; deploy never uploads it, and `.dev.vars` is not read.
+- Secrets are injected at request time, never bundled, so a rotation takes effect without a rebuild.
+- `process.env` is also populated (`nodejs_compat`, date ≥ 2025-04-01) for Node-style libraries; app code still uses `void/env` and `cloudflare:workers`.
+- Builds ignore `VITE_*` from `.env` — pass production public values in the shell (`VITE_FOO=... void deploy`).
 
 ```mermaid
 sequenceDiagram
@@ -627,19 +582,13 @@ sequenceDiagram
   Note over W: next request sees new value, no rebuild
 ```
 
-Because isolates can survive a binding change, never derive clients from a secret at module scope — they'd keep the old value. Build them per request (see Gotchas).
-
 ### TypeScript
 
 `tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Run `bunx void prepare`, then `bunx void init --tsconfig`: it adds `"extends": "./.void/tsconfig.json"` and merges Void's `paths` (`void/queues`, `@schema`) into yours — the TanStack scaffold's own `paths` otherwise shadows them and `queues.email` stops type-checking. It also writes Void's `.gitignore` entries. Do not hand-write `Env`. Add `"@cloudflare/vitest-plugin/types"` to `types` for `cloudflare:test`.
 
 ### Observability
 
-- **Workers Logs** are on when `cloudflare.observability.enabled` is `true` — `console.log` calls are captured automatically, no library.
-- **Live tail**: `bunx void project logs` streams invocation logs (errors, `console.*`, invocation status).
-- **Logpush**: for retention beyond Workers' own retention window, ship logs to R2 / S3 / a HTTPS destination via a Logpush job. Configure the job in the dashboard.
-- **Invocation analytics**: Workers Observability dashboard surfaces CPU time, error rate, requests by colo.
-- **Trace IDs**: generate one per request in `start.ts` (see Operational patterns) and log it with every line so a `void project logs` session can follow one request end-to-end.
+`console.log` an object (`{ traceId, event, ... }`) — Workers Logs captures it when `cloudflare.observability.enabled` is on; no log library. Tail live with `bunx void project logs`; ship to R2 via Logpush only if you need retention beyond Workers Logs.
 
 ## Deploy
 
@@ -734,7 +683,6 @@ export function newTraceId() {
   return crypto.randomUUID()
 }
 
-// Log with context; pair with the trace ID set in start.ts middleware.
 export function logCtx(traceId: string, event: string, fields: Record<string, unknown> = {}) {
   console.log({ traceId, event, ...fields })
 }
@@ -780,24 +728,12 @@ export const createPost = createServerFn({ method: 'POST' })
 
 ## Gotchas
 
-- **Bindings are request-time** — call `getDb()` / `getAuth()` inside the handler. Isolates can be reused across a binding or secret change, so a client built at module scope keeps the old value; per-request construction always sees the current one.
 - **D1 is SQLite**: no `jsonb`, no `uuid` type (ids are `text`), integer timestamps — `RETURNING` works (SQLite ≥ 3.35). Use `drizzle-orm/sqlite-core`, not `pg-core`.
 - **D1 limits**: 10 GB per database (paid; 500 MB free), 2 MB max row/BLOB, 100 KB max statement, 30 s max query, 1000 queries per invocation (50 on Workers Free). Writes hit a single-region primary. Void enables read replication on databases it provisions, but a bare `drizzle(env.DB)` reads from the primary unless you open a session with `env.DB.withSession()`. Past these limits, switch to Hyperdrive + Postgres.
 - **KV is eventually consistent** and read-cached (~60s), with no atomic increment and a 60 s minimum TTL: fine for read-heavy caches, wrong for sessions that must revoke immediately, rate-limit counters, or one-time tokens — use D1 or a Durable Object there.
 - **Rate limiting**: Better Auth's built-in limiter covers auth routes. For others use the `ratelimits` binding (`period` is 10 or 60 seconds only, and counts are per-colo, not global).
-- **Email**: `email.from` must be on a zone in your account, and sending to arbitrary recipients needs Workers Paid (Free only reaches verified destination addresses). `void/email` returns `{ ok: false }` instead of throwing — the wrapper must throw. Always send `text` alongside `html`.
-- **No persistent state between requests**: V8 isolates start in ms but share nothing reliable. Never cache per-user state at module scope.
-- **CPU time limit**: 30s default on paid (configurable up to 5 min); I/O wall-clock is not counted.
-- **Better Auth on Workers** hashes passwords with scrypt (`node:crypto` under `nodejs_compat`, else `@noble/hashes`) — `bcrypt` / `argon2` don't run on Workers anyway. Confirm the configured hash on Better Auth upgrades.
-- **Bun lockfile** is `bun.lock` (text). Commit it.
-- **Logging is `console`** with an object payload (`console.log({ traceId, event })`), captured by Workers Logs when `observability.enabled` is on. Inspect live with `void project logs`, or query in the Workers Observability dashboard. No log library — for retention beyond Workers' window, ship to R2 via Logpush.
-- **`@cloudflare/vitest-pool-workers` is deprecated** — use `@cloudflare/vitest-plugin` (peer `vitest ^4.1 || ^5`). `defineWorkersConfig` and `poolOptions` are gone; `env` from `cloudflare:test` is deprecated in favour of `cloudflare:workers`.
 - **`compatibility_date` drift**: an old date silently disables newer compatibility-flag defaults; a date newer than the installed workerd supports fails `vite dev` ("newest date supported by this server binary is …"). Bump `worker.compatibility_date` at least quarterly, to a date a few days old; the email/D1/ratelimits bindings need a recent date for the latest binding semantics.
-- **Void plugin order**: `voidPlugin()` must come before `tanstackStart()` in `vite.config.ts`. Don't also add `@cloudflare/vite-plugin` — Void provides it.
-- **Void state files**: commit `void.config.ts` and `void.lock.json`; gitignore `.void/`, `.void-wrangler.jsonc`, and `.env`. Deleting the lock makes the next deploy provision new resources.
-- **Secrets need `env.ts`**: `void secret put` / `sync` throw for names not declared there, and `void deploy` fails while a required key is unset remotely.
 - **No named environments**: Void doesn't support Wrangler `[env.*]`. Staging is a separate Void project config.
-- **Existing Worker with `wrangler.toml`**: convert it to `wrangler.jsonc` before the first `void deploy`; Void then migrates it into `void.config.ts` and keeps its bindings and secrets.
 
 ## Rules for AI
 
@@ -815,9 +751,6 @@ export const createPost = createServerFn({ method: 'POST' })
 - Use TanStack Router, not React Router. Loaders fetch data — never `getServerSideProps` / `getStaticProps`.
 - Place server functions next to the component that uses them. Group by feature, not by layer.
 - Reach for a binding before a package: D1 before an external DB, R2 before an S3 SDK, `send_email` before a mail SDK, `ratelimits` before a hand-rolled limiter, Vectorize before a hosted vector DB, Queues/Workflows before an external job runner.
-- Generate ids in app code (`crypto.randomUUID()` / ULID); never rely on DB auto-increment.
-- Never hand-edit `db/migrations/`; regenerate with `void db generate`.
 - Provision, migrate, set secrets, and deploy with the `void` CLI — not `wrangler`. Don't write a `wrangler.toml`.
-- Log structured objects with a trace ID — never stringly-typed logs.
 - No `any`, no `as unknown as X`. If a type assertion feels necessary, widen the schema or the return type.
 - Server function inputs and outputs must be serializable (Zod-validated in, JSON-safe out). `FormData` is allowed for POST server fns; `Response` is allowed as a return.

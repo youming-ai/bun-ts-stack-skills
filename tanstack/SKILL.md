@@ -37,7 +37,7 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 - Bun is the dev runtime: package manager and script runner. Never `npm` / `pnpm` / `yarn` / `node`. (Tests run in workerd via Vitest, not in Bun.)
 - Production runs on **Cloudflare Workers** — a V8 isolate, not Node. Runtime code uses Web-standard APIs (`fetch`, Web Crypto, Streams).
 - No Bun-specific APIs (`Bun.password`, `bun:sqlite`, `Bun.s3`) in runtime code — it never executes under Bun. Dev, test, and prod all run on workerd.
-- **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level. Module-level binding reads are unsafe because the Vite-plugin's async context isn't established at import time; you'd read stale/empty env and silently corrupt state.
+- **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level. Isolates can be reused across a binding or secret change, so a client built at module scope keeps the old value; per-request construction always sees the current one.
 - TypeScript `strict: true` everywhere.
 - Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `nodemailer`, `winston`, `bunyan`, `pino`, `hono`, `express`.
 - **Version policy**: TanStack Start tracks one major behind current when a previous major exists. Today only `1.x` has ever shipped, so pin `"@tanstack/react-start": "^1.168"` in `package.json` and bump deliberately.
@@ -104,6 +104,8 @@ flowchart LR
 
 ### Rendering strategy
 
+_Rendering, execution-model, secrets, and deploy flows below are adapted from Lovable's [Building apps using TanStack Start](https://lovable.dev/blog/building-apps-using-tanstack-start)._
+
 | Route type                              | Mode         | How                                                                 |
 | --------------------------------------- | ------------ | ------------------------------------------------------------------- |
 | Data-independent (landing, blog, about) | Static (SSG) | `tanstackStart({ prerender: { enabled: true } })` in `vite.config.ts` |
@@ -111,6 +113,26 @@ flowchart LR
 | Purely client-rendered                  | CSR          | `ssr: false` route option in `createFileRoute(...)({ ... })`        |
 
 Prerendered routes serve flat HTML from the CDN with no Worker invocation — use them for everything that doesn't read per-user data.
+
+Why not CSR by default: a client-rendered page ships an empty `<div id="root">` shell, so content needs two round trips (JS, then data). Crawlers render it late or not at all, and social previewers (Slack, LinkedIn, X) only read the initial HTML's meta tags. With SSR the Worker runs loaders and streams finished HTML on the first request:
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant W as Cloudflare Worker
+  participant D as D1
+  B->>W: GET /dashboard
+  W->>W: TanStack Start SSR render
+  W->>D: createServerFn → query
+  D-->>W: rows
+  W-->>B: HTML with content
+```
+
+### Execution model
+
+Code is **isomorphic by default**: route modules, loaders, and components land in both the server and client bundles. Server-only or client-only code is marked with an explicit boundary.
+
+`createServerFn` is that boundary. The Start Vite plugin transforms it at build time: the server bundle keeps the handler body; the client bundle replaces it with a typed `fetch` stub that POSTs to the server-fn endpoint. Write it like a normal function, import it anywhere, keep it next to the component — one file, one deploy, end-to-end types from call site to handler. No separate API service.
 
 ## Project structure
 
@@ -131,6 +153,7 @@ src/
 ├── components/{ui,forms}/
 ├── styles/app.css                # @import "tailwindcss"
 ├── start.ts                      # global request middleware (security headers)
+├── server.ts                     # optional custom Worker entry (queue / cron / DO exports)
 └── router.tsx
 drizzle/                          # generated migrations (= wrangler migrations_dir)
 drizzle.config.ts, vite.config.ts, vitest.config.ts, wrangler.toml
@@ -154,7 +177,7 @@ bun add drizzle-orm better-auth zod @tanstack/react-form tailwindcss @tailwindcs
 
 # Dev
 bun add -d drizzle-kit wrangler @cloudflare/vite-plugin @vitejs/plugin-react
-bun add -d vitest @cloudflare/vitest-pool-workers
+bun add -d vitest@4 @cloudflare/vitest-pool-workers   # pool peer is vitest ^4.1 — not 5
 
 # UI
 bunx shadcn@latest init
@@ -217,7 +240,7 @@ export const posts = sqliteTable('posts', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   body: text('body').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
 ```
 
@@ -441,20 +464,29 @@ max_concurrency = 5
 ```ts
 // src/lib/queue.ts
 import { env } from 'cloudflare:workers'
+
+export type EmailOutbound = { to: string; subject: string; html: string }
 export const enqueueEmail = (msg: EmailOutbound) => env.EMAIL_QUEUE.send(msg)
 ```
 
 ```ts
-// src/worker.ts — consumer (registered via wrangler entry or a Worker export)
+// src/server.ts — custom server entry: Start's fetch + extra Worker handlers
+import handler from '@tanstack/react-start/server-entry'
+import { sendEmail } from '~/lib/email'
+import type { EmailOutbound } from '~/lib/queue'
+
 export default {
-  async queue(batch: MessageBatch<EmailOutbound>) {
+  fetch: handler.fetch,
+  async queue(batch) {
     for (const m of batch.messages) {
       try { await sendEmail(m.body.to, m.body.subject, m.body.html); m.ack() }
-      catch (e) { m.retry({ delaySeconds: 60 }) }
+      catch { m.retry({ delaySeconds: 60 }) }
     }
   },
 } satisfies ExportedHandler<Env, EmailOutbound>
 ```
+
+Then set `main = "src/server.ts"` in `wrangler.toml`. The default `@tanstack/react-start/server-entry` only exports `fetch`, so queue / `scheduled` (Cron) handlers and Durable Object / Workflow class exports all need this custom entry.
 
 ### Security headers
 
@@ -515,8 +547,8 @@ Server functions parse with the same schema before touching the DB — client va
 // vite.config.ts
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import { tailwindcss } from '@tailwindcss/vite'
-import { viteReact } from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
@@ -545,8 +577,8 @@ No `tailwind.config.js` — tokens live in `@theme`. shadcn/ui must use its v4 m
 
 ```toml
 name = "my-app"
-main = "@tanstack/react-start/server-entry"   # @cloudflare/vite-plugin resolves the built Worker
-compatibility_date = "2025-09-24"              # bump periodically; older dates silently miss newer flag defaults
+main = "@tanstack/react-start/server-entry"   # or "src/server.ts" once you add queue/cron/DO handlers
+compatibility_date = "2026-10-22"              # bump periodically; older dates silently miss newer flag defaults
 compatibility_flags = ["nodejs_compat"]
 
 [observability]
@@ -582,7 +614,27 @@ APP_NAME = "My App"
 | Public (client-safe) | `VITE_` prefix | `import.meta.env.VITE_FOO`                    |
 | Server secrets       | Worker binding | `env.FOO` from `cloudflare:workers`           |
 
-Secrets go in with `wrangler secret put NAME`. `process.env` on Workers is an in-memory object that's not populated from your Cloudflare secrets — read from the binding. The build strips non-`VITE_` variables from client bundles. `bunx wrangler types` regenerates the `Env` type.
+Secrets go in with `wrangler secret put NAME`. They are never part of the bundle — the runtime injects them as bindings at request time, so a rotation takes effect without a rebuild. With `nodejs_compat` and `compatibility_date` ≥ 2025-04-01, `process.env` is populated from vars and secrets too (useful for Node-style libraries), but app code reads `env` from `cloudflare:workers` — it's typed and includes non-text bindings. The build strips non-`VITE_` variables from client bundles. `bunx wrangler types` regenerates the `Env` type.
+
+```mermaid
+sequenceDiagram
+  participant Dev
+  participant Build as Vite build
+  participant W as Cloudflare Worker
+  participant B as Browser
+  Dev->>W: wrangler secret put MY_SECRET_KEY
+  Note over W: stored per Worker, outside the bundle
+  Dev->>Build: wrangler deploy
+  Build->>Build: inline VITE_* into client bundle
+  Build->>W: upload bundle (no secrets)
+  B->>W: request
+  Note over W: env.MY_SECRET_KEY available in createServerFn
+  W-->>B: response
+  Dev->>W: wrangler secret put MY_SECRET_KEY (rotate)
+  Note over W: next request sees new value, no rebuild
+```
+
+Because isolates can survive a binding change, never derive clients from a secret at module scope — they'd keep the old value. Build them per request (see Gotchas).
 
 ### TypeScript
 
@@ -603,6 +655,19 @@ No CI pipeline — deploy is a two-step manual sequence from a clean checkout:
 ```bash
 bunx wrangler d1 migrations apply my-app --remote
 bunx wrangler deploy
+```
+
+```mermaid
+sequenceDiagram
+  participant Dev
+  participant WR as wrangler
+  participant V as Vite build
+  participant CF as Cloudflare Workers
+  Dev->>WR: wrangler deploy
+  WR->>V: build
+  V->>V: client assets + SSR entry + prerender static routes
+  WR->>CF: upload Worker + static assets
+  CF-->>Dev: live at *.workers.dev / custom domain
 ```
 
 Before deploying, run the checks CI would have run: `bunx tsc --noEmit` and `bunx vitest run`.
@@ -653,8 +718,6 @@ Wrap every server function / route handler in a single try/catch that logs a str
 
 ```ts
 // src/lib/trace.ts
-import { getRequest } from '@tanstack/react-start/server'
-
 export function newTraceId() {
   return crypto.randomUUID()
 }
@@ -670,6 +733,7 @@ export function logCtx(traceId: string, event: string, fields: Record<string, un
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { getDb } from '~/db'
+import { posts } from '~/db/schema'
 import { newTraceId, logCtx } from '~/lib/trace'
 
 const createPostSchema = z.object({ title: z.string().min(1).max(200), body: z.string().min(1) })
@@ -694,7 +758,7 @@ export const createPost = createServerFn({ method: 'POST' })
 ### ID generation
 
 - **Primary keys are `text`, not auto-increment integers and not a `uuid` column type** (D1 has none). Generate ids in app code with `crypto.randomUUID()` (built into Web Crypto on Workers) or an ULID (`ulid` pkg) if you need time-sortable ids.
-- **Timestamps are integer Unix-ms** with Drizzle `integer('...', { mode: 'timestamp' })`. Do not mix `Date` objects and numbers across the wire — pick one and validate with Zod (`z.number().int()` on the server boundary).
+- **Timestamps are integer Unix-ms** with Drizzle `integer('...', { mode: 'timestamp_ms' })` (`'timestamp'` stores seconds). Drizzle maps them to `Date` in app code; do not mix `Date` objects and raw numbers across the wire — pick one and validate it with Zod at the server boundary.
 
 ### Migration discipline
 
@@ -705,7 +769,7 @@ export const createPost = createServerFn({ method: 'POST' })
 
 ## Gotchas
 
-- **Bindings are request-time** — call `getDb()` / `getAuth()` inside the handler. Module-level binding reads are unsafe because the Vite-plugin's async context isn't established at import time; you'd read stale/empty env and silently corrupt state.
+- **Bindings are request-time** — call `getDb()` / `getAuth()` inside the handler. Isolates can be reused across a binding or secret change, so a client built at module scope keeps the old value; per-request construction always sees the current one.
 - **D1 is SQLite**: no `jsonb`, no `uuid` type (ids are `text`), integer timestamps — `RETURNING` works (SQLite ≥ 3.35). Use `drizzle-orm/sqlite-core`, not `pg-core`.
 - **D1 limits**: 10 GB per database (paid; 500 MB free), 2 MB max row/BLOB, 100 KB max statement, 30 s max query, 1000 queries per invocation. Writes hit a single-region primary; reads can scale out via D1 read replication (beta, paid). Cross-region read latency is why sessions sit in KV. Past these limits, switch to Hyperdrive + Postgres.
 - **KV is eventually consistent** and read-cached (~60s): fine for session acceleration, wrong for immediate global revocation or atomic counters — use D1 or a Durable Object there.

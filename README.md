@@ -1,6 +1,6 @@
 # bun-ts-stack-skills
 
-A Claude skill for full-stack TypeScript apps on **Bun + TanStack Start**, deployed to **Cloudflare Workers** — everything runs on Cloudflare bindings, no external services.
+A Claude skill for full-stack TypeScript apps on **Bun + TanStack Start**, built with **Vite**, deployed to **Cloudflare Workers** with **Void** — everything runs on Cloudflare bindings, no external services.
 
 ## Stack
 
@@ -12,7 +12,8 @@ A Claude skill for full-stack TypeScript apps on **Bun + TanStack Start**, deplo
 | Email | Cloudflare Email Sending |
 | ORM / forms / validation | Drizzle / TanStack Form / Zod |
 | CSS / UI | Tailwind v4 / shadcn-ui |
-| Dev / test / deploy | Bun / Vitest / wrangler |
+| Build / deploy | Vite / Void (`void deploy`) |
+| Dev / test | Bun / Vitest |
 
 Full conventions live in [`tanstack/SKILL.md`](./tanstack/SKILL.md) — the single source of truth.
 

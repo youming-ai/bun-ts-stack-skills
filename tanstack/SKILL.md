@@ -1,13 +1,13 @@
 ---
 name: tanstack
-description: All-in-Cloudflare TypeScript conventions for apps on Bun + TanStack Start, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Drizzle ORM, Cloudflare D1, R2, KV, Queues, Workflows, Workers AI, Vectorize, Better Auth, Cloudflare Email Sending, Tailwind v4, shadcn/ui, TanStack Form, Zod, Vitest, and wrangler. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "upload files", "rate limit", "CI pipeline", "Drizzle schema", "server function", "deploy to Cloudflare", "Workers", "D1", "R2", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, since it is the project's canonical stack and other choices should be checked against it.
+description: All-in-Cloudflare TypeScript conventions for apps on Bun + TanStack Start, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Void (deploy), Drizzle ORM, Cloudflare D1, R2, KV, Queues, Workflows, Workers AI, Vectorize, Better Auth, Cloudflare Email Sending, Tailwind v4, shadcn/ui, TanStack Form, Zod, and Vitest. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "upload files", "rate limit", "CI pipeline", "Drizzle schema", "server function", "deploy to Cloudflare", "void deploy", "Workers", "D1", "R2", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, since it is the project's canonical stack and other choices should be checked against it.
 ---
 
 # TanStack Start on Cloudflare
 
 Conventions for full-stack TypeScript apps on Bun + TanStack Start, running entirely on Cloudflare. Source of truth for stack choices, layout, integrations, and deploy. Deviate only with explicit reason.
 
-**Everything is a Cloudflare binding.** No external database, no external mail provider, no separate API server. One Worker, one `wrangler deploy`.
+**Everything is a Cloudflare binding.** No external database, no external mail provider, no separate API server. One Worker, one `void deploy`.
 
 ## Stack
 
@@ -17,9 +17,9 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 | Prod runtime | Cloudflare Workers (V8 isolate)                 |
 | Language     | TypeScript (strict)                             |
 | Framework    | TanStack Start (React 19 + TanStack Router)     |
-| Build        | Vite + `@cloudflare/vite-plugin`                |
+| Build        | Vite + `voidPlugin()` (wraps the Cloudflare Vite plugin) |
 | API          | Server functions + route `server.handlers`      |
-| ORM          | Drizzle + Drizzle Kit                           |
+| ORM          | Drizzle (migrations via `void db`)              |
 | Database     | Cloudflare D1 (SQLite)                          |
 | KV           | Cloudflare KV (session cache, auth rate limits) |
 | Auth         | Better Auth                                     |
@@ -28,9 +28,9 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 | UI           | shadcn/ui (Radix + Tailwind) + lucide-react     |
 | Forms        | TanStack Form                                   |
 | Validation   | Zod                                             |
-| Logs         | Workers Observability (`console` + Workers Logs, `wrangler tail`)|
+| Logs         | Workers Observability (`console` + Workers Logs, `void project logs`)|
 | Test         | Vitest + `@cloudflare/vitest-pool-workers`      |
-| Deploy       | `bunx wrangler deploy`                          |
+| Deploy       | `bunx void deploy` (Void CLI)                   |
 
 ### Non-negotiables
 
@@ -40,12 +40,12 @@ Conventions for full-stack TypeScript apps on Bun + TanStack Start, running enti
 - **Bindings are request-time.** Build the DB client and Better Auth inside the handler, never at module top level. Isolates can be reused across a binding or secret change, so a client built at module scope keeps the old value; per-request construction always sees the current one.
 - TypeScript `strict: true` everywhere.
 - Do not install: `dotenv`, `ts-node`, `tsx`, `nodemon`, `jest`, `bcrypt`, `argon2`, `node-fetch`, `nodemailer`, `winston`, `bunyan`, `pino`, `hono`, `express`.
-- **Version policy**: TanStack Start tracks one major behind current when a previous major exists. Today only `1.x` has ever shipped, so pin `"@tanstack/react-start": "^1.168"` in `package.json` and bump deliberately.
+- **Version policy**: TanStack Start tracks one major behind current when a previous major exists. Today only `1.x` has ever shipped, so pin `"@tanstack/react-start": "^1.168"` in `package.json` and bump deliberately. Pin `void` too (`^1.2`) — the CLI must match the installed package version or Cloudflare deploys refuse to run.
 - Vitest is the test runner, always through `@cloudflare/vitest-pool-workers` so tests get real bindings. Not `bun test`, not `jest`.
 
 ### Deliberately unconfigured
 
-No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. Nothing in this skill depends on them, so adding them later is additive. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions running `bunx tsc --noEmit` + `bunx vitest run` + `bunx wrangler deploy`.
+No formatter/linter, no git hooks, no CI pipeline — deferred, not rejected. Nothing in this skill depends on them, so adding them later is additive. When that day comes: Biome for lint/format, lefthook for hooks, GitHub Actions from `bunx void init --github`, plus `bunx void prepare` + `bunx tsc --noEmit` + `bunx vitest run` before deploy.
 
 ### Add only when the need is real
 
@@ -57,7 +57,7 @@ Everything below is **not** in the default stack. Add one when the listed condit
 | Semantic search, RAG, similarity over text                  | Workers AI (embeddings) + **Vectorize** binding (native vector store on Workers) |
 | Append-only time-series analytics (signups, feature-flag hits, email opens) | **Workers Analytics Engine** binding (SQL-queryable, no extra infra) |
 | Long-running or multi-step background jobs (cleanup, digests, reports) | Cloudflare **Queues** (consumers) / **Workflows** (durable, retryable, step-based) |
-| Scheduled jobs (cleanup, digests, reports)                 | Cron Triggers in `wrangler.toml`                       |
+| Scheduled jobs (cleanup, digests, reports)                 | A handler in `crons/` (Void provisions the Cron Trigger) |
 | Realtime / WebSocket app (presence, collaboration)         | Durable Object with **WebSocket Hibernation**           |
 | Strong consistency, atomic counters, single-writer state   | Durable Object                                         |
 | Headless Chrome (PDF/screenshot, scraping)                 | Workers **Browser Rendering** binding (open beta)       |
@@ -67,7 +67,7 @@ Everything below is **not** in the default stack. Add one when the listed condit
 | Rate limits on non-auth routes                             | Cloudflare `ratelimits` binding                        |
 | Bot protection on signup / public forms                    | Cloudflare Turnstile — free, no CAPTCHA friction       |
 | Admin panel auth / internal tooling                        | Cloudflare Access (Zero Trust) — no custom auth code    |
-| Centralized secret governance across Workers               | **Cloudflare Secrets Store** binding (vs ad-hoc `wrangler secret put`) |
+| Centralized secret governance across Workers               | **Cloudflare Secrets Store** binding (vs per-Worker `void secret put`) |
 | Private network path to on-prem DB                         | Workers **VPC** binding (open beta)                     |
 | Marketing email, templates, campaign analytics             | Resend + React Email (transactional stays on the binding) |
 | Error alerting / release tracking beyond Workers Logs      | `@sentry/cloudflare` + `@sentry/tanstackstart-react`   |
@@ -142,21 +142,24 @@ src/
 │   ├── __root.tsx
 │   ├── index.tsx
 │   └── api/auth/$.ts             # Better Auth handler
-├── db/
-│   ├── index.ts                  # Drizzle client (from D1 binding)
-│   ├── schema.ts                 # business tables
-│   └── auth-schema.ts            # Better Auth (CLI-generated, do not edit)
+├── db/index.ts                   # Drizzle client (from D1 binding)
 ├── lib/
 │   ├── auth.ts, auth-client.ts
-│   └── email.ts                  # send_email binding wrapper
+│   └── email.ts                  # void/email wrapper (throws on failure)
 ├── schemas/                      # shared Zod schemas
 ├── components/{ui,forms}/
 ├── styles/app.css                # @import "tailwindcss"
 ├── start.ts                      # global request middleware (security headers)
-├── server.ts                     # optional custom Worker entry (queue / cron / DO exports)
+├── server.ts                     # optional custom Worker entry (Durable Object / Workflow exports)
 └── router.tsx
-drizzle/                          # generated migrations (= wrangler migrations_dir)
-drizzle.config.ts, vite.config.ts, vitest.config.ts, wrangler.toml
+db/                               # Void convention, project root (not src/)
+├── schema.ts                     # business tables + `export * from './auth-schema'`
+├── auth-schema.ts                # Better Auth (CLI-generated, do not edit)
+└── migrations/                   # generated by `void db generate`
+queues/email.ts                   # queue consumer (Void convention)
+.env                              # local values only, gitignored (no .dev.vars)
+void.config.ts, void.lock.json    # commit both; .void-wrangler.jsonc is generated, gitignored
+vite.config.ts, vitest.config.ts
 ```
 
 ## Setup
@@ -176,7 +179,7 @@ bunx @tanstack/cli@latest create my-app && cd my-app
 bun add drizzle-orm better-auth zod @tanstack/react-form tailwindcss @tailwindcss/vite
 
 # Dev
-bun add -d drizzle-kit wrangler @cloudflare/vite-plugin @vitejs/plugin-react
+bun add -d void @vitejs/plugin-react                  # void brings the Cloudflare Vite plugin, Drizzle Kit, and the deploy CLI
 bun add -d vitest@4 @cloudflare/vitest-pool-workers   # pool peer is vitest ^4.1 — not 5
 
 # UI
@@ -185,33 +188,31 @@ bunx shadcn@latest init
 
 ### Provision Cloudflare resources
 
-Each command prints an id for `wrangler.toml`.
+Nothing to run by hand. Void infers bindings from code (`env.DB` → D1, `env.KV` → KV, `env.STORAGE` → R2, `env.AI` → Workers AI, a file in `queues/` → a Queue), creates missing resources on the first `void deploy`, and records their IDs in `void.lock.json`. The email domain is set up from `email.from` in `void.config.ts` (Void asks before changing DNS).
 
 ```bash
-bunx wrangler d1 create my-app
-bunx wrangler kv namespace create KV
-bunx wrangler email sending enable example.com   # onboard the sending domain (must be on Cloudflare DNS)
+bunx void init      # pick Cloudflare as the target; writes void.config.ts
 ```
+
+Run the first deploy from one machine and commit `void.lock.json` before deploying from anywhere else — a parallel first deploy provisions duplicates.
 
 ### Auth schema & migrations
 
 ```bash
 # After writing src/lib/auth.ts
-bunx @better-auth/cli generate --output src/db/auth-schema.ts
+bunx @better-auth/cli generate --output db/auth-schema.ts
 
-# Migrations: generate SQL with Drizzle, apply with wrangler.
-# Point wrangler migrations_dir at ./drizzle so the two agree — otherwise
-# wrangler won't find the SQL drizzle-kit generated.
-bunx drizzle-kit generate
-bunx wrangler d1 migrations apply my-app --local     # dev
-bunx wrangler d1 migrations apply my-app --remote    # prod
+# Migrations: Void reads db/schema.ts and writes SQL + Drizzle metadata to db/migrations/.
+bunx void db generate
+bunx void db migrate          # apply to the local D1
+# Remote is applied by `void deploy` (after a D1 Time Travel restore point).
 ```
 
 ### Regenerate Env types
 
 ```bash
-# Re-run after every wrangler.toml edit so env.* bindings are typed.
-bunx wrangler types
+# Re-run after changing bindings or void.config.ts; writes types under .void/.
+bunx void prepare
 ```
 
 ## Integration patterns
@@ -224,16 +225,15 @@ D1 is a binding, not a connection string — no pool, no driver, no `DATABASE_UR
 // src/db/index.ts
 import { drizzle } from 'drizzle-orm/d1'
 import { env } from 'cloudflare:workers'
-import * as schema from './schema'
-import * as authSchema from './auth-schema'
+import * as schema from '@schema' // Void alias for db/schema.ts (re-exports auth-schema)
 
 // Call inside a handler. Bindings are request-scoped — never at module top level.
-export const getDb = () => drizzle(env.DB, { schema: { ...schema, ...authSchema } })
+export const getDb = () => drizzle(env.DB, { schema })
 export type DB = ReturnType<typeof getDb>
 ```
 
 ```ts
-// src/db/schema.ts — SQLite tables, not pg
+// db/schema.ts — SQLite tables, not pg
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const posts = sqliteTable('posts', {
@@ -242,42 +242,20 @@ export const posts = sqliteTable('posts', {
   body: text('body').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
+
+export * from './auth-schema'
 ```
 
-```ts
-// drizzle.config.ts
-import { defineConfig } from 'drizzle-kit'
-
-export default defineConfig({
-  schema: ['./src/db/schema.ts', './src/db/auth-schema.ts'],
-  out: './drizzle',
-  dialect: 'sqlite',
-  // `generate` only emits SQL — no connection needed.
-  // drizzle-kit studio against remote D1 additionally needs driver: 'd1-http' + dbCredentials.
-})
-```
-
-Workflow: `drizzle-kit generate` writes SQL into `drizzle/`; `wrangler d1 migrations apply` runs it. Never `drizzle-kit migrate` — it has no D1 binding (it expects a live connection string, which D1 doesn't expose).
+Workflow: `void db generate` writes SQL into `db/migrations/`; `void db migrate` applies it locally; `void deploy` applies it remotely. No `drizzle.config.ts`, no `drizzle-kit` — Void owns the schema path and migration history, and deploy stops if the schema has changes without a migration.
 
 #### If you outgrow D1 and switch to Postgres
 
-Postgres on Workers **must** go through Hyperdrive — an isolate can't hold a long-lived TCP connection across requests, and Hyperdrive pools them at the edge. Four things change together:
+Postgres on Workers **must** go through Hyperdrive — an isolate can't hold a long-lived TCP connection across requests, and Hyperdrive pools them at the edge. Void wires this up:
 
-```ts
-// src/db/index.ts
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import { env } from 'cloudflare:workers'
-import * as schema from './schema'
-
-export const getDb = () =>
-  drizzle(postgres(env.HYPERDRIVE.connectionString, { prepare: false, max: 5 }), { schema })
-```
-
-1. `bunx wrangler hyperdrive create my-app-db --connection-string="postgres://..."`, then a `[[hyperdrive]]` block in `wrangler.toml` (drop `[[d1_databases]]`).
-2. Schema moves from `drizzle-orm/sqlite-core` to `pg-core`; Better Auth adapter goes `provider: 'sqlite'` → `'pg'`.
-3. Keep `nodejs_compat` — postgres.js needs the Node `net` polyfill.
-4. Migrations connect **directly** to Postgres via `DATABASE_URL` (`drizzle-kit migrate`), not through Hyperdrive and not via `wrangler d1 migrations apply`. Hyperdrive is not a migration endpoint.
+1. Set `database: 'pg'` in `void.config.ts`; put `DATABASE_URL` in `.env` locally and in the shell that runs `void deploy` (Void creates Hyperdrive from it and runs migrations against it directly — it is never written to config).
+2. Schema moves to `pg-core` (or `void/schema-pg`); Better Auth adapter goes `provider: 'sqlite'` → `'pg'`.
+3. Query through `db` from `void/db` — it connects via Hyperdrive in production and directly in dev, so `getDb()` goes away.
+4. Keep `nodejs_compat`.
 
 For routes with several DB round trips, consider Smart Placement so the Worker runs closer to the database — but not on asset-heavy Workers.
 
@@ -363,39 +341,34 @@ Providers beyond the built-ins:
 - **Phone OTP** → `phoneNumber` plugin from `better-auth/plugins`; supply `sendOTP` (SMS provider is yours).
 - **WeChat** → `genericOAuth` plugin from `better-auth/plugins`; WeChat is not a built-in provider.
 
-Re-run `bunx @better-auth/cli generate` + `bunx drizzle-kit generate` after every Better Auth or plugin change — plugins add tables.
+Re-run `bunx @better-auth/cli generate --output db/auth-schema.ts` + `bunx void db generate` after every Better Auth or plugin change — plugins add tables. Void-managed auth (`void/auth`) is not supported for TanStack Start yet; Better Auth stays wired by hand as above.
 
 ### Email (Cloudflare Email Sending)
 
-No API key, no SDK — the `send_email` binding is the whole integration.
+No API key — `sendEmail` from `void/email` sends through the Cloudflare `send_email` binding in production and into a local inbox in dev. Sender comes from `email.from` in `void.config.ts`.
 
 ```ts
 // src/lib/email.ts
-import { env } from 'cloudflare:workers'
+import { sendEmail as voidSend } from 'void/email'
 
 export async function sendEmail(to: string, subject: string, html: string) {
-  await env.EMAIL.send({
+  const result = await voidSend({
     to,
-    from: { email: env.EMAIL_FROM, name: env.APP_NAME },
     subject,
     html,
     text: html.replace(/<[^>]+>/g, ' ').trim(), // clients that only show plain text
   })
+  // void/email returns a result instead of throwing — surface failures so
+  // Better Auth's verify/reset flows don't silently "succeed".
+  if (!result.ok) throw new Error(`sendEmail failed: ${JSON.stringify(result)}`)
 }
 ```
 
-The `from` domain must be onboarded first (`bunx wrangler email sending enable example.com`) and on Cloudflare DNS — otherwise the verification/reset flow fails silently. Transactional only — marketing sends belong on a marketing platform.
+`void deploy` checks the `email.from` domain and offers to set it up (it must be a zone on your account). Transactional only — marketing sends belong on a marketing platform.
 
 ### R2 (not in the base stack)
 
-Add it when there are actual uploads — `bunx wrangler r2 bucket create my-app`, then:
-
-```toml
-# wrangler.toml
-[[r2_buckets]]
-binding = "R2"
-bucket_name = "my-app"
-```
+Add it when there are actual uploads. Reading `env.STORAGE` is enough — Void infers the R2 binding and creates the bucket on deploy.
 
 It's a binding like the rest — serve through a route handler, never add an S3 SDK:
 
@@ -408,7 +381,7 @@ export const Route = createFileRoute('/api/files/$key')({
   server: {
     handlers: {
       GET: async ({ params }) => {
-        const obj = await env.R2.get(params.key)
+        const obj = await env.STORAGE.get(params.key)
         if (!obj) return new Response('Not found', { status: 404 })
         return new Response(obj.body, {
           headers: { 'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream' },
@@ -419,7 +392,7 @@ export const Route = createFileRoute('/api/files/$key')({
 })
 ```
 
-Authorize writes **before** calling `env.R2.put()` — the route handler is the trust boundary, not R2. For large or direct-from-browser uploads, put the bucket behind a custom domain or issue presigned URLs instead of streaming through the Worker.
+Authorize writes **before** calling `env.STORAGE.put()` — the route handler is the trust boundary, not R2. For large or direct-from-browser uploads, put the bucket behind a custom domain or issue presigned URLs instead of streaming through the Worker.
 
 ```ts
 // src/routes/api/files/upload.ts — authorized PUT
@@ -436,7 +409,7 @@ export const Route = createFileRoute('/api/files/upload')({
         if (!session) return new Response('Unauthorized', { status: 401 })
 
         const key = `${session.user.id}/${crypto.randomUUID()}`
-        await env.R2.put(key, request.body, {
+        await env.STORAGE.put(key, request.body, {
           httpMetadata: { contentType: request.headers.get('content-type') ?? 'application/octet-stream' },
         })
         return Response.json({ key })
@@ -450,43 +423,30 @@ export const Route = createFileRoute('/api/files/upload')({
 
 Queues for at-least-once consumers; Workflows for durable, step-based, retryable orchestration.
 
-```toml
-# wrangler.toml
-[[queues.producers]]
-binding = "EMAIL_QUEUE"
-queue = "email-outbound"
-
-[[queues.consumers]]
-queue = "email-outbound"
-max_concurrency = 5
-```
+A file in `queues/` is a consumer; its path is the queue name. Void provisions the queue and wires the handler — no Worker config, no custom entry.
 
 ```ts
-// src/lib/queue.ts
-import { env } from 'cloudflare:workers'
+// queues/email.ts
+import { defineQueue } from 'void'
+import { sendEmail } from '~/lib/email'
 
 export type EmailOutbound = { to: string; subject: string; html: string }
-export const enqueueEmail = (msg: EmailOutbound) => env.EMAIL_QUEUE.send(msg)
+
+export default defineQueue<EmailOutbound>(async (batch) => {
+  for (const m of batch.messages) {
+    try { await sendEmail(m.body.to, m.body.subject, m.body.html); m.ack() }
+    catch { m.retry({ delaySeconds: 60 }) }
+  }
+})
 ```
 
 ```ts
-// src/server.ts — custom server entry: Start's fetch + extra Worker handlers
-import handler from '@tanstack/react-start/server-entry'
-import { sendEmail } from '~/lib/email'
-import type { EmailOutbound } from '~/lib/queue'
-
-export default {
-  fetch: handler.fetch,
-  async queue(batch) {
-    for (const m of batch.messages) {
-      try { await sendEmail(m.body.to, m.body.subject, m.body.html); m.ack() }
-      catch { m.retry({ delaySeconds: 60 }) }
-    }
-  },
-} satisfies ExportedHandler<Env, EmailOutbound>
+// producer, inside a server fn — typed from the consumer's generic
+import { queues } from 'void/queues'
+await queues.email.send({ to, subject, html })
 ```
 
-Then set `main = "src/server.ts"` in `wrangler.toml`. The default `@tanstack/react-start/server-entry` only exports `fetch`, so queue / `scheduled` (Cron) handlers and Durable Object / Workflow class exports all need this custom entry.
+Cron jobs follow the same pattern in `crons/`. Durable Object and Workflow classes still need a custom entry: set `cloudflare: { main: './src/server.ts' }` in `void.config.ts`, `export default handler` from `@tanstack/react-start/server-entry` there, add the class as a named export, and bind it under `cloudflare.durable_objects` / `cloudflare.workflows`.
 
 ### Security headers
 
@@ -545,15 +505,15 @@ Server functions parse with the same schema before touching the DB — client va
 
 ```ts
 // vite.config.ts
-import { cloudflare } from '@cloudflare/vite-plugin'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { voidPlugin } from 'void'
 
 export default defineConfig({
   plugins: [
-    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    voidPlugin(), // must come before tanstackStart(); replaces @cloudflare/vite-plugin
     tanstackStart(),
     viteReact(),
     tailwindcss(),
@@ -573,37 +533,30 @@ export default defineConfig({
 
 No `tailwind.config.js` — tokens live in `@theme`. shadcn/ui must use its v4 mode.
 
-### wrangler.toml
+### void.config.ts
 
-```toml
-name = "my-app"
-main = "@tanstack/react-start/server-entry"   # or "src/server.ts" once you add queue/cron/DO handlers
-compatibility_date = "2026-10-22"              # bump periodically; older dates silently miss newer flag defaults
-compatibility_flags = ["nodejs_compat"]
+There is no `wrangler.toml`. Authored settings live in `void.config.ts`; provisioned IDs live in `void.lock.json` (commit both). Void generates `.void-wrangler.jsonc` for Cloudflare tooling — gitignore it, never edit it.
 
-[observability]
-enabled = true
+```ts
+// void.config.ts
+import { defineConfig } from 'void/config'
 
-[[d1_databases]]
-binding = "DB"
-database_name = "my-app"
-database_id = "<id from `wrangler d1 create`>"
-migrations_dir = "drizzle"
-
-[[kv_namespaces]]
-binding = "KV"
-id = "<id from `wrangler kv namespace create`>"
-
-[[send_email]]
-name = "EMAIL"
-# Local `wrangler dev` simulates sending (logs only); add `remote = true` to send real mail from dev.
-
-[vars]
-PUBLIC_ORIGIN = "https://my-app.example.com"
-EMAIL_FROM = "hello@example.com"
-APP_NAME = "My App"
-# Secrets (never here): wrangler secret put BETTER_AUTH_SECRET / GOOGLE_CLIENT_SECRET / ...
+export default defineConfig({
+  worker: {
+    compatibility_date: '2026-10-22', // bump periodically; older dates silently miss newer flag defaults
+    compatibility_flags: ['nodejs_compat'],
+    vars: { PUBLIC_ORIGIN: 'https://my-app.example.com' },
+  },
+  email: { from: 'My App <hello@example.com>' },
+  cloudflare: {
+    name: 'my-app',
+    observability: { enabled: true },
+  },
+  // Secrets (never here): void secret put BETTER_AUTH_SECRET / GOOGLE_CLIENT_SECRET / ...
+})
 ```
+
+D1 (`env.DB`), KV (`env.KV`), R2 (`env.STORAGE`), Workers AI (`env.AI`), and queues are inferred — don't declare them. Bindings Void doesn't infer (`ratelimits`, Vectorize, Analytics Engine, service bindings, Durable Objects) go under `cloudflare` with the usual Wrangler field names; Void passes them through.
 
 `nodejs_compat` is for Better Auth and React SSR internals, not a database driver.
 
@@ -614,7 +567,7 @@ APP_NAME = "My App"
 | Public (client-safe) | `VITE_` prefix | `import.meta.env.VITE_FOO`                    |
 | Server secrets       | Worker binding | `env.FOO` from `cloudflare:workers`           |
 
-Secrets go in with `wrangler secret put NAME`. They are never part of the bundle — the runtime injects them as bindings at request time, so a rotation takes effect without a rebuild. With `nodejs_compat` and `compatibility_date` ≥ 2025-04-01, `process.env` is populated from vars and secrets too (useful for Node-style libraries), but app code reads `env` from `cloudflare:workers` — it's typed and includes non-text bindings. The build strips non-`VITE_` variables from client bundles. `bunx wrangler types` regenerates the `Env` type.
+Secrets go in with `void secret put NAME` (bulk: `void secret sync <file>`); local values live in the root `.env`, which deploy never uploads. `.dev.vars` is not read. They are never part of the bundle — the runtime injects them as bindings at request time, so a rotation takes effect without a rebuild. With `nodejs_compat` and `compatibility_date` ≥ 2025-04-01, `process.env` is populated from vars and secrets too (useful for Node-style libraries), but app code reads `env` from `cloudflare:workers` — it's typed and includes non-text bindings. The build strips non-`VITE_` variables from client bundles, and ignores `VITE_*` from `.env` — pass production public values in the shell (`VITE_FOO=... void deploy`). `bunx void prepare` regenerates binding types.
 
 ```mermaid
 sequenceDiagram
@@ -622,15 +575,15 @@ sequenceDiagram
   participant Build as Vite build
   participant W as Cloudflare Worker
   participant B as Browser
-  Dev->>W: wrangler secret put MY_SECRET_KEY
+  Dev->>W: void secret put MY_SECRET_KEY
   Note over W: stored per Worker, outside the bundle
-  Dev->>Build: wrangler deploy
+  Dev->>Build: void deploy
   Build->>Build: inline VITE_* into client bundle
   Build->>W: upload bundle (no secrets)
   B->>W: request
   Note over W: env.MY_SECRET_KEY available in createServerFn
   W-->>B: response
-  Dev->>W: wrangler secret put MY_SECRET_KEY (rotate)
+  Dev->>W: void secret put MY_SECRET_KEY (rotate)
   Note over W: next request sees new value, no rebuild
 ```
 
@@ -638,39 +591,44 @@ Because isolates can survive a binding change, never derive clients from a secre
 
 ### TypeScript
 
-`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Binding types come from the generated `worker-configuration.d.ts` (`bunx wrangler types`) — do not hand-write `Env`.
+`tsconfig.json`: `strict`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, alias `"~/*": ["./src/*"]`. Add `"types": ["void/env"]` for binding and Workers runtime types, and run `bunx void prepare` to generate `.void/` — do not hand-write `Env`.
 
 ### Observability
 
-- **Workers Logs** are on when `[observability] enabled = true` — `console.log` calls are captured automatically, no library.
-- **Live tail**: `bunx wrangler tail` streams invocation logs (errors, `console.*`, invocation status).
-- **Logpush**: for retention beyond Workers' own retention window, ship logs to R2 / S3 / a HTTPS destination via a Logpush job. Configure in dashboard or `wrangler r2 bucket create` the target first.
+- **Workers Logs** are on when `cloudflare.observability.enabled` is `true` — `console.log` calls are captured automatically, no library.
+- **Live tail**: `bunx void project logs` streams invocation logs (errors, `console.*`, invocation status).
+- **Logpush**: for retention beyond Workers' own retention window, ship logs to R2 / S3 / a HTTPS destination via a Logpush job. Configure the job in the dashboard.
 - **Invocation analytics**: Workers Observability dashboard surfaces CPU time, error rate, requests by colo.
-- **Trace IDs**: generate one per request in `start.ts` (see Operational patterns) and log it with every line so a `wrangler tail` session can follow one request end-to-end.
+- **Trace IDs**: generate one per request in `start.ts` (see Operational patterns) and log it with every line so a `void project logs` session can follow one request end-to-end.
 
 ## Deploy
 
-No CI pipeline — deploy is a two-step manual sequence from a clean checkout:
+Vite builds, Void deploys. One command from a clean checkout (first run opens a browser to log in to Cloudflare):
 
 ```bash
-bunx wrangler d1 migrations apply my-app --remote
-bunx wrangler deploy
+bunx void deploy
 ```
 
 ```mermaid
 sequenceDiagram
   participant Dev
-  participant WR as wrangler
+  participant VD as void deploy
   participant V as Vite build
-  participant CF as Cloudflare Workers
-  Dev->>WR: wrangler deploy
-  WR->>V: build
+  participant CF as Cloudflare
+  Dev->>VD: void deploy
+  VD->>CF: create missing resources (IDs → void.lock.json)
+  VD->>V: build
   V->>V: client assets + SSR entry + prerender static routes
-  WR->>CF: upload Worker + static assets
-  CF-->>Dev: live at *.workers.dev / custom domain
+  VD->>CF: check secrets + migrations
+  VD->>CF: D1 Time Travel restore point, apply db/migrations
+  VD->>CF: upload Worker + assets (staged)
+  VD->>CF: readiness check, then shift traffic
+  CF-->>Dev: live URL (previous version restored if readiness fails)
 ```
 
-Before deploying, run the checks CI would have run: `bunx tsc --noEmit` and `bunx vitest run`.
+Before deploying, run the checks CI would have run: `bunx void prepare`, `bunx tsc --noEmit`, and `bunx vitest run`.
+
+After deploying: `void project status`, `void project logs`, `void project rollback`. Rollback does **not** reverse migrations — restore D1 with the `void db restore` command deploy printed (restore points last 7 days on Workers Free, 30 on Paid), or write a new migration.
 
 ## Testing
 
@@ -684,7 +642,7 @@ export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        wrangler: { configPath: './wrangler.toml' },
+        wrangler: { configPath: './.void-wrangler.jsonc' }, // generated by Void; run `void init` first
         miniflare: { compatibilityFlags: ['nodejs_compat'] },
       },
     },
@@ -693,7 +651,7 @@ export default defineWorkersConfig({
 ```
 
 ```ts
-// src/db/posts.test.ts
+// db/posts.test.ts
 import { env } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
@@ -706,7 +664,7 @@ test('inserts a post', async () => {
 })
 ```
 
-`bunx vitest` (watch) / `bunx vitest run` (once) / `--coverage`. Apply migrations to the local D1 first (`wrangler d1 migrations apply my-app --local`). Never mock the ORM — the pool gives you a real local D1.
+`bunx vitest` (watch) / `bunx vitest run` (once) / `--coverage`. Apply migrations to the local D1 first (`void db migrate`). Never mock the ORM — the pool gives you a real local D1.
 
 Add `@cloudflare/vitest-pool-workers` to `tsconfig.json` `types` so `cloudflare:test` resolves.
 
@@ -714,7 +672,7 @@ Add `@cloudflare/vitest-pool-workers` to `tsconfig.json` `types` so `cloudflare:
 
 ### Error handling & trace IDs
 
-Wrap every server function / route handler in a single try/catch that logs a structured object with a per-request trace ID, then rethrows or returns a normalized error. The trace ID lets a `wrangler tail` session follow one request end-to-end across server fn → DB → email.
+Wrap every server function / route handler in a single try/catch that logs a structured object with a per-request trace ID, then rethrows or returns a normalized error. The trace ID lets a `void project logs` session follow one request end-to-end across server fn → DB → email.
 
 ```ts
 // src/lib/trace.ts
@@ -762,10 +720,9 @@ export const createPost = createServerFn({ method: 'POST' })
 
 ### Migration discipline
 
-- `drizzle/` is **generated**, never hand-edited. Change the schema in `src/db/schema.ts`, run `drizzle-kit generate`, commit both.
-- A PR that touches `src/db/schema.ts` **must** include the matching `drizzle/*.sql` — otherwise prod drifts.
-- `migrations_dir = "drizzle"` in `wrangler.toml` must point at the same folder `drizzle-kit` writes to; if they disagree, `wrangler d1 migrations apply` silently no-ops.
-- Apply with `--local` in dev, `--remote` in the deploy step. Never edit a migration SQL file after it has been applied to `--remote` — write a new migration instead.
+- `db/migrations/` (SQL + `meta/`) is **generated**, never hand-edited. Change the schema in `db/schema.ts`, run `void db generate`, commit both.
+- A PR that touches `db/schema.ts` **must** include the matching migration — `void deploy` refuses to deploy a schema with unmigrated changes.
+- `void db migrate` applies locally; `void deploy` applies remotely. Never edit a migration after it has been deployed — write a new migration instead. `void db status` shows drift and pending migrations.
 
 ## Gotchas
 
@@ -774,14 +731,18 @@ export const createPost = createServerFn({ method: 'POST' })
 - **D1 limits**: 10 GB per database (paid; 500 MB free), 2 MB max row/BLOB, 100 KB max statement, 30 s max query, 1000 queries per invocation. Writes hit a single-region primary; reads can scale out via D1 read replication (beta, paid). Cross-region read latency is why sessions sit in KV. Past these limits, switch to Hyperdrive + Postgres.
 - **KV is eventually consistent** and read-cached (~60s): fine for session acceleration, wrong for immediate global revocation or atomic counters — use D1 or a Durable Object there.
 - **Rate limiting**: Better Auth's built-in limiter covers auth routes. For others use the `ratelimits` binding (`period` is 10 or 60 seconds only, and counts are per-colo, not global).
-- **Email domain must be onboarded** (`wrangler email sending enable`) before the first send, or Better Auth's verification flow fails silently. Always send `text` alongside `html`.
+- **Email**: `email.from` must be on a zone in your account, and sending to arbitrary recipients needs Workers Paid (Free only reaches verified destination addresses). `void/email` returns `{ ok: false }` instead of throwing — the wrapper must throw. Always send `text` alongside `html`.
 - **No persistent state between requests**: V8 isolates start in ms but share nothing reliable. Never cache per-user state at module scope.
 - **CPU time limit**: 30s default on paid (configurable up to 5 min); I/O wall-clock is not counted.
 - **Better Auth on Workers** hashes via Web Crypto (scrypt) — `bcrypt` / `argon2` don't run on Workers anyway. Confirm the configured hash on Better Auth upgrades.
 - **Bun lockfile** is `bun.lock` (text). Commit it.
-- **Logging is `console`** with an object payload (`console.log({ traceId, event })`), captured by Workers Logs when `observability.enabled` is on. Inspect live with `wrangler tail`, or query in the Workers Observability dashboard. No log library — for retention beyond Workers' window, ship to R2 via Logpush.
+- **Logging is `console`** with an object payload (`console.log({ traceId, event })`), captured by Workers Logs when `observability.enabled` is on. Inspect live with `void project logs`, or query in the Workers Observability dashboard. No log library — for retention beyond Workers' window, ship to R2 via Logpush.
 - **`@cloudflare/vitest-pool-workers` pins its Vitest major** (peer `vitest ^4.1`). Bump the two together, or the pool refuses to load.
-- **`compatibility_date` drift**: an old date silently disables newer compatibility-flag defaults. Bump it at least quarterly; the email/D1/ratelimits bindings need a recent date for the latest binding semantics.
+- **`compatibility_date` drift**: an old date silently disables newer compatibility-flag defaults. Bump `worker.compatibility_date` at least quarterly; the email/D1/ratelimits bindings need a recent date for the latest binding semantics.
+- **Void plugin order**: `voidPlugin()` must come before `tanstackStart()` in `vite.config.ts`. Don't also add `@cloudflare/vite-plugin` — Void provides it.
+- **Void state files**: commit `void.config.ts` and `void.lock.json`; gitignore `.void-wrangler.jsonc` and `.env`. Deleting the lock makes the next deploy provision new resources.
+- **No named environments**: Void doesn't support Wrangler `[env.*]`. Staging is a separate Void project config.
+- **Existing Worker with `wrangler.toml`**: convert it to `wrangler.jsonc` before the first `void deploy`; Void then migrates it into `void.config.ts` and keeps its bindings and secrets.
 
 ## Rules for AI
 
@@ -800,7 +761,8 @@ export const createPost = createServerFn({ method: 'POST' })
 - Place server functions next to the component that uses them. Group by feature, not by layer.
 - Reach for a binding before a package: D1 before an external DB, R2 before an S3 SDK, `send_email` before a mail SDK, `ratelimits` before a hand-rolled limiter, Vectorize before a hosted vector DB, Queues/Workflows before an external job runner.
 - Generate ids in app code (`crypto.randomUUID()` / ULID); never rely on DB auto-increment.
-- Never hand-edit `drizzle/*.sql`; regenerate with `drizzle-kit generate`.
+- Never hand-edit `db/migrations/`; regenerate with `void db generate`.
+- Provision, migrate, set secrets, and deploy with the `void` CLI — not `wrangler`. Don't write a `wrangler.toml`.
 - Log structured objects with a trace ID — never stringly-typed logs.
 - No `any`, no `as unknown as X`. If a type assertion feels necessary, widen the schema or the return type.
 - Server function inputs and outputs must be serializable (Zod-validated in, JSON-safe out). `FormData` is allowed for POST server fns; `Response` is allowed as a return.

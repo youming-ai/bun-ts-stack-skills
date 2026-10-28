@@ -1,6 +1,6 @@
 ---
 name: tanstack
-description: All-in-Cloudflare TypeScript conventions for apps on Bun + TanStack Start, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Void (deploy), Drizzle ORM, Cloudflare D1, Better Auth, Cloudflare Email Sending, Tailwind v4, shadcn/ui, TanStack Form, Zod, and Vitest, plus opt-in R2, KV, Queues, Workflows, Workers AI, and Vectorize. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "upload files", "rate limit", "CI pipeline", "Drizzle schema", "server function", "deploy to Cloudflare", "void deploy", "Workers", "D1", "R2", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, since it is the project's canonical stack and other choices should be checked against it.
+description: All-in-Cloudflare TypeScript conventions for apps on Bun + TanStack Start, deployed to Cloudflare Workers. Covers scaffolding, layout, integrations, config, and deploy for the canonical stack of Bun (dev tooling), TanStack Start, Vite, Void (deploy), Drizzle ORM, Cloudflare D1, Better Auth, Cloudflare Email Sending, Tailwind v4, shadcn/ui, TanStack Form, Zod, and Vitest, plus opt-in R2, KV, Queues, Workflows, Workers AI, and Vectorize. Use whenever the user is scaffolding, configuring, writing code for, or deploying a project mentioning ANY of these — including "set up a new project", "add auth", "send emails", "upload files", "rate limit", "CI pipeline", "Drizzle schema", "server function", "deploy to Cloudflare", "void deploy", "Workers", "D1", "R2", "my stack", or "this project" in a Bun + TanStack context. Trigger even when only a subset is mentioned, as this is the canonical stack. Deviations must be checked against these conventions.
 ---
 
 # TanStack Start on Cloudflare
@@ -53,11 +53,11 @@ Everything below is **not** in the default stack. Add one when the listed condit
 | Relational workload D1 can't hold (>10 GB, Postgres-only SQL) | `database: 'pg'` in `void.config.ts` + `DATABASE_URL` (Void provisions Hyperdrive) |
 | Semantic search, RAG, similarity over text                  | Workers AI (embeddings) + **Vectorize** binding (native vector store on Workers) |
 | Append-only time-series analytics (signups, feature-flag hits, email opens) | **Workers Analytics Engine** binding (SQL-queryable, no extra infra) |
-| Long-running or multi-step background jobs (cleanup, digests, reports) | Cloudflare **Queues** (consumers) / **Workflows** (durable, retryable, step-based) |
-| Scheduled jobs (cleanup, digests, reports)                 | A handler in `crons/` (Void provisions the Cron Trigger) |
+| Long-running or multi-step background jobs (video encoding, webhook delivery, onboarding drip sequences) | Cloudflare **Queues** (consumers) / **Workflows** (durable, retryable, step-based) |
+| Scheduled jobs (nightly cleanup, daily digests, periodic sync) | A handler in `crons/` (Void provisions the Cron Trigger) |
 | Realtime / WebSocket app (presence, collaboration)         | Durable Object with **WebSocket Hibernation**           |
 | Strong consistency, atomic counters, single-writer state   | Durable Object                                         |
-| Headless Chrome (PDF/screenshot, scraping)                 | Workers **Browser Run** (formerly Browser Rendering) binding |
+| Headless Chrome (PDF/screenshot, scraping)                 | Workers **Browser Rendering** binding (`browser`)       |
 | Long-lived non-V8 task (ffmpeg, heavy CPU, GPU)            | Cloudflare **Containers**                               |
 | User uploads / large media                                 | R2 binding — serve via a route handler, no S3 SDK       |
 | Read-heavy cache, feature flags, config at the edge        | KV binding (`env.KV`) — eventually consistent, not for counters |
@@ -117,10 +117,12 @@ src/
 │   └── api/auth/$.ts             # Better Auth handler
 ├── db/index.ts                   # Drizzle client (from D1 binding)
 ├── lib/
-│   ├── auth.ts, auth-client.ts
+│   ├── auth.ts
+│   ├── auth-client.ts
 │   ├── auth.shared.ts            # schema-affecting auth options (runtime + CLI)
 │   ├── auth.cli.ts               # only for `@better-auth/cli generate`
-│   └── email.ts                  # void/email wrapper (throws on failure)
+│   ├── email.ts                  # void/email wrapper (throws on failure)
+│   └── trace.ts                  # trace IDs and structured logging
 ├── schemas/                      # shared Zod schemas
 ├── components/{ui,forms}/
 ├── styles/app.css                # @import "tailwindcss"
@@ -276,7 +278,7 @@ export function getAuth() {
       github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     },
     // tanstackStartCookies must be the LAST plugin in the array.
-    plugins: [...schemaOptions.plugins, tanstackStartCookies()],
+    plugins: [...(schemaOptions.plugins ?? []), tanstackStartCookies()],
   })
 }
 ```
@@ -371,13 +373,12 @@ Serve it through a route handler, never an S3 SDK. Reads are the mirror image: `
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 import { getAuth } from '~/lib/auth'
-import { getRequestHeaders } from '@tanstack/react-start/server'
 
 export const Route = createFileRoute('/api/files/upload')({
   server: {
     handlers: {
       PUT: async ({ request }) => {
-        const session = await getAuth().api.getSession({ headers: getRequestHeaders() })
+        const session = await getAuth().api.getSession({ headers: request.headers })
         if (!session) return new Response('Unauthorized', { status: 401 })
 
         const key = `${session.user.id}/${crypto.randomUUID()}`
@@ -689,11 +690,11 @@ export function logCtx(traceId: string, event: string, fields: Record<string, un
 ```
 
 ```ts
-// src/utils/posts.functions.ts
+// src/features/posts/posts.functions.ts
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
+import { posts } from '@schema'
 import { getDb } from '~/db'
-import { posts } from '~/db/schema'
 import { newTraceId, logCtx } from '~/lib/trace'
 
 const createPostSchema = z.object({ title: z.string().min(1).max(200), body: z.string().min(1) })

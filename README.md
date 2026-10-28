@@ -10,8 +10,8 @@ A Claude skill for full-stack TypeScript apps on **Bun + TanStack Start**, built
 | Database | Cloudflare D1 |
 | Auth | Better Auth |
 | Email | Cloudflare Email Sending |
-| ORM / forms / validation | Drizzle / TanStack Form / Zod |
-| CSS / UI | Tailwind v4 / shadcn-ui |
+| ORM / Forms / Validation | Drizzle / TanStack Form / Zod |
+| CSS / UI | Tailwind v4 / shadcn/ui |
 | Build / deploy | Vite / Void (`void deploy`) |
 | Dev / test | Bun / Vitest |
 
